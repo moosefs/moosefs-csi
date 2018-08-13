@@ -11,12 +11,14 @@ compile:
 
 build:
 	@echo "==> Building the docker image"
-	@docker build -t tuxera/moosefs-csi-plugin:$(VERSION) .
+	@docker build -t quay.io/tuxera/moosefs-csi-plugin:$(VERSION) .
+	@docker build -t quay.io/tuxera/moosefs-csi-plugin:latest .
 
 push:
-	@echo "==> Publishing digitalocean/do-csi-plugin:$(VERSION)"
-	@docker push tuxera/moosefs-csi-plugin:$(VERSION)
-	@echo "==> Your image is now available at tuxera/moosefs-csi-plugin:$(VERSION)"
+	@echo "==> Publishing tuxera/do-csi-plugin:$(VERSION)"
+	@docker push quay.io/tuxera/moosefs-csi-plugin:$(VERSION)
+	@docker push quay.io/tuxera/moosefs-csi-plugin:latest
+	@echo "==> Your image is now available at quay.io/tuxera/moosefs-csi-plugin:$(VERSION)/latest"
 
 clean:
 	@echo "==> Cleaning releases"
