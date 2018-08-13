@@ -3,8 +3,6 @@ package driver
 import (
 	"context"
 	"errors"
-	"fmt"
-	"strconv"
 	"time"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi/v0"
@@ -105,11 +103,6 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 		return nil, status.Error(codes.InvalidArgument, "ControllerPublishVolume Volume capability must be provided")
 	}
 
-	dropletID, err := strconv.Atoi(req.NodeId)
-	if err != nil {
-		return nil, fmt.Errorf("malformed nodeId %q detected: %s", req.NodeId, err)
-	}
-
 	ll := d.log.WithFields(logrus.Fields{
 		"volume_id": req.VolumeId,
 		"node_id":   req.NodeId,
@@ -130,11 +123,6 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.ControllerUnpublishVolumeRequest) (*csi.ControllerUnpublishVolumeResponse, error) {
 	if req.VolumeId == "" {
 		return nil, status.Error(codes.InvalidArgument, "ControllerPublishVolume Volume ID must be provided")
-	}
-
-	dropletID, err := strconv.Atoi(req.NodeId)
-	if err != nil {
-		return nil, fmt.Errorf("malformed nodeId %q detected: %s", req.NodeId, err)
 	}
 
 	ll := d.log.WithFields(logrus.Fields{
@@ -211,15 +199,6 @@ func (d *Driver) ValidateVolumeCapabilities(ctx context.Context, req *csi.Valida
 
 // ListVolumes returns a list of all requested volumes
 func (d *Driver) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (*csi.ListVolumesResponse, error) {
-	var page int
-	var err error
-	if req.StartingToken != "" {
-		page, err = strconv.Atoi(req.StartingToken)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	ll := d.log.WithFields(logrus.Fields{
 		"req_starting_token": req.StartingToken,
 		"method":             "list_volumes",
@@ -321,6 +300,7 @@ func (d *Driver) waitAction(ctx context.Context, volumeId string, actionId int) 
 		"action_id": actionId,
 	})
 
+	ll.Info("waitaction called")
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 
