@@ -1,7 +1,16 @@
-FROM alpine:3.7
+FROM ubuntu:18.04
 
-RUN apk add --no-cache ca-certificates e2fsprogs findmnt
+# Install wget, lsb-release and curl
+RUN apt-get update && apt-get install -y wget lsb-release curl fuse libfuse2 tree ca-certificates e2fsprogs gnupg2
 
+# Add key
+RUN wget -O - http://ppa.moosefs.com/moosefs.key | apt-key add -
+RUN . /etc/lsb-release && echo "deb http://ppa.moosefs.com/moosefs-3/apt/ubuntu/$DISTRIB_CODENAME $DISTRIB_CODENAME main" > /etc/apt/sources.list.d/moosefs.list
+
+# Install MooseFS client
+RUN apt-get update && apt-get install -y moosefs-client
+
+# Copy the CSI plugin
 ADD moosefs-csi-plugin /bin/
 
 ENTRYPOINT ["/bin/moosefs-csi-plugin"]
