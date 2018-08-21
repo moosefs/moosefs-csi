@@ -286,12 +286,8 @@ func main() {
 	CreateECS(
         "eu-west-1",
 		"my_cluster",
-		"",
-		"+Z5D2haLtx7d2HP6g7D",
 }
 */
-// var accessKey=""
-// var secretAccessKey = "/qdmFHAuo2ng5N07dzAwdsFFtKwwswce0Mp"
 
 /*
 sess, err := session.NewSession(&aws.Config{Region: aws.String("us-west-2")})
