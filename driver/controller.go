@@ -306,3 +306,19 @@ func (d *Driver) waitAction(ctx context.Context, volumeId string, actionId int) 
 
 	return nil
 }
+
+// v0.3
+func (d *Driver) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequest) (*csi.CreateSnapshotResponse, error) {
+
+	return &csi.CreateSnapshotResponse{}, nil
+}
+
+func (d *Driver) DeleteSnapshot(ctx context.Context, req *csi.DeleteSnapshotRequest) (*csi.DeleteSnapshotResponse, error) {
+
+	return &csi.DeleteSnapshotResponse{}, nil
+}
+
+func (d *Driver) ListSnapshots(ctx context.Context, req *csi.ListSnapshotsRequest) (*csi.ListSnapshotsResponse, error) {
+
+	return &csi.ListSnapshotsResponse{}, nil
+}

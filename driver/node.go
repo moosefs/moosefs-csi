@@ -222,6 +222,11 @@ func (d *Driver) NodeGetId(ctx context.Context, req *csi.NodeGetIdRequest) (*csi
 	}, nil
 }
 
+// NodeGetInfo similar to NodeGetId
+func (d *Driver) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error) {
+	return &csi.NodeGetInfoResponse{}, nil
+}
+
 // NodeGetCapabilities returns the supported capabilities of the node server
 func (d *Driver) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetCapabilitiesRequest) (*csi.NodeGetCapabilitiesResponse, error) {
 	// currently there is a single NodeServer capability according to the spec
@@ -242,6 +247,11 @@ func (d *Driver) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetCapabi
 			nscap,
 		},
 	}, nil
+}
+
+// NodeGetVolumeStats impl
+func (d *Driver) NodeGetVolumeStats(ctx context.Context, req *csi.NodeGetVolumeStatsRequest) (*csi.NodeGetVolumeStatsResponse, error) {
+	return &csi.NodeGetVolumeStatsResponse{}, nil
 }
 
 // getDiskSource returns the absolute path of the attached volume for the given
