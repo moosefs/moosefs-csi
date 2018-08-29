@@ -1,10 +1,14 @@
 package driver
 
 import (
+	"encoding/base64"
 	"errors"
+	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
@@ -20,13 +24,15 @@ type AwsCreds struct {
 type MfsType struct {
 	name    string
 	version string
+	Env     []*ecs.KeyValuePair
 }
 
 // Maintains the AWS entities created during ECS creation
 type ECSStore struct {
 	Service       *ecs.CreateServiceOutput
 	Task          *ecs.RegisterTaskDefinitionOutput
-	SecurityGroup *ec2.CreateSecurityGroupOutput
+	SecurityGroup *ec2.SecurityGroup
+	TaskList      *ecs.ListTasksOutput
 }
 
 // CreateECSCluster ...
@@ -77,7 +83,7 @@ func DeleteECSCluster(creds AwsCreds, region, name string) (*ecs.DeleteClusterOu
 }
 
 // CreateECSService ...
-func CreateECSService(creds AwsCreds, region, name, clusterName, taskName string, mfsType MfsType) (ECSStore, error) {
+func CreateECSService(creds AwsCreds, region, name, clusterName string, mfsType MfsType) (ECSStore, error) {
 	store := ECSStore{}
 	sess, err := session.NewSession(
 		&aws.Config{
@@ -88,44 +94,73 @@ func CreateECSService(creds AwsCreds, region, name, clusterName, taskName string
 		return store, err
 	}
 
+	// Register task definition
 	svc := ecs.New(sess)
-	output, err := registerTaskDefinition(svc, taskName, mfsType)
+	output, err := registerTaskDefinition(svc, mfsType)
 	if err != nil {
 		return store, err
 	}
 	store.Task = output
 
-	sg, err := createSecurityGroup(clusterName, "Created for moosefs-csi-fargate", region)
+	// Create securityGroup
+	sgs, err := createSecurityGroup(clusterName, "Created for moosefs-csi-fargate", region)
 	if err != nil {
 		return store, err
 	}
-	store.SecurityGroup = sg
-	gid := *sg.GroupId
+	store.SecurityGroup = sgs[0]
 
-	input := &ecs.CreateServiceInput{
-		Cluster:        aws.String(clusterName),
-		DesiredCount:   aws.Int64(1),
-		ServiceName:    aws.String(name),
-		TaskDefinition: aws.String(taskName),
-		LaunchType:     aws.String("FARGATE"),
-		NetworkConfiguration: &ecs.NetworkConfiguration{
-			AwsvpcConfiguration: &ecs.AwsVpcConfiguration{
-				AssignPublicIp: aws.String(ecs.AssignPublicIpEnabled),
-				SecurityGroups: aws.StringSlice([]string{gid}),
-				Subnets:        aws.StringSlice(createSubnets(clusterName)),
+	//Check and Create the service
+	svcInput := &ecs.DescribeServicesInput{
+		Cluster:  aws.String(clusterName),
+		Services: []*string{aws.String(name)},
+	}
+	svcOutput, err := svc.DescribeServices(svcInput)
+	if err != nil {
+		return store, err
+	}
+	// Service does not exist
+	if len(svcOutput.Services) == 0 || (svcOutput.Services[0] != nil && *svcOutput.Services[0].Status != "ACTIVE") {
+
+		gid := *sgs[0].GroupId
+		input := &ecs.CreateServiceInput{
+			Cluster:        aws.String(clusterName),
+			DesiredCount:   aws.Int64(1),
+			ServiceName:    aws.String(name),
+			TaskDefinition: aws.String(mfsType.name),
+			LaunchType:     aws.String("FARGATE"),
+			NetworkConfiguration: &ecs.NetworkConfiguration{
+				AwsvpcConfiguration: &ecs.AwsVpcConfiguration{
+					AssignPublicIp: aws.String(ecs.AssignPublicIpEnabled),
+					SecurityGroups: aws.StringSlice([]string{gid}),
+					Subnets:        aws.StringSlice(createSubnets(clusterName)),
+				},
 			},
-		},
+		}
+		result, err := svc.CreateService(input)
+		if err != nil {
+			return store, err
+		}
+		store.Service = result
 	}
-	result, err := svc.CreateService(input)
-	if err != nil {
+
+	// Wait for task running
+	if err := waitUntilTaskArn(clusterName, svc, 60); err != nil {
 		return store, err
 	}
 
-	store.Service = result
+	// List tasks for Arns
+	listTaskInput := &ecs.ListTasksInput{
+		Cluster: aws.String(clusterName),
+	}
+
+	result1, err := svc.ListTasks(listTaskInput)
+	store.TaskList = result1
+
 	return store, nil
 }
 
 // DeleteECSService ...
+// TODO(anoop): Handle SG
 func DeleteECSService(creds AwsCreds, region, name, clusterName string, store ECSStore) (*ecs.DeleteServiceOutput, error) {
 	sess, err := session.NewSession(
 		&aws.Config{
@@ -163,19 +198,106 @@ func DeleteECSService(creds AwsCreds, region, name, clusterName string, store EC
 	return result, nil
 }
 
-func registerTaskDefinition(svc *ecs.ECS, taskName string, mfsType MfsType) (*ecs.RegisterTaskDefinitionOutput, error) {
+// CreateEc2Instance ...
+// TODO(anoop): not idempotent
+func CreateEc2Instance(region, sg, masterIP string, volSize int64) (*ec2.Reservation, error) {
+	devName := "/dev/xvdh"
+	userData := func(volSize, masterIP string) string {
+		return `
+#!/bin/bash
+# Install fuse and others
+yum install -y curl gnupg2 fuse libfuse2 ca-certificates e2fsprogs
+# Install certificates and Repository
+curl "https://ppa.moosefs.com/RPM-GPG-KEY-MooseFS" > /etc/pki/rpm-gpg/RPM-GPG-KEY-MooseFS
+curl "http://ppa.moosefs.com/MooseFS-3-el7.repo" > /etc/yum.repos.d/MooseFS.repo
+# Install chunkserver
+yum install -y moosefs-chunkserver xfsprogs
+# Provision and mount volume
+mkfs -t xfs ` + devName + `
+mkdir -p /mnt/xvdh
+mount ` + devName + ` /mnt/xvdh
+# Configure moosefs chunk server
+chown -R mfs:mfs /mnt/xvdh && echo '/mnt/xvdh ` + volSize + `GiB' > /etc/mfs/mfshdd.cfg
+# Add master
+echo 'MASTER_HOST = ` + masterIP + `' > /etc/mfs/mfschunkserver.cfg
+# Start the chunkserver service
+/usr/sbin/mfschunkserver start
+`
+	}
+	imageName := "amzn-ami-hvm-2018.03.0.20180412-x86_64-ebs" // ensure its in all regions
+
+	// create svc
+	sess, err := session.NewSession(&aws.Config{
+		Region: aws.String(region)},
+	)
+	if err != nil {
+		return nil, err
+	}
+	// Create an EC2 service client.
+	svc := ec2.New(sess)
+
+	// Obtain the imageID
+	descInput := &ec2.DescribeImagesInput{
+		Filters: []*ec2.Filter{
+			&ec2.Filter{
+				Name: aws.String("name"),
+				Values: []*string{
+					aws.String(imageName),
+				},
+			},
+		},
+	}
+	descOutput, err := svc.DescribeImages(descInput)
+	if err != nil {
+		return nil, err
+	}
+	if len(descOutput.Images) < 1 || descOutput.Images[0].ImageId == nil {
+		return nil, errors.New("Unable to fetch ImageID for ImageName: " + imageName)
+	}
+	imageID := descOutput.Images[0].ImageId
+	userDataStr := userData(strconv.FormatInt(volSize, 10), masterIP)
+	userDataEncoded := base64.URLEncoding.EncodeToString([]byte(userDataStr))
+
+	riInput := &ec2.RunInstancesInput{
+		KeyName:          aws.String("anoop_ireland"), // TODO(anoop): To be removed
+		ImageId:          imageID,
+		InstanceType:     aws.String(ec2.InstanceTypeT2Micro),
+		MinCount:         aws.Int64(1),
+		MaxCount:         aws.Int64(1),
+		UserData:         aws.String(userDataEncoded),
+		SecurityGroupIds: []*string{aws.String(sg)},
+		BlockDeviceMappings: []*ec2.BlockDeviceMapping{
+			{
+				DeviceName: aws.String("/dev/xvdh"),
+				Ebs: &ec2.EbsBlockDevice{
+					VolumeSize: aws.Int64(volSize),
+					//					DeleteOnTermination: aws.Bool(true),
+				},
+			},
+		},
+	}
+	riOutput, err := svc.RunInstances(riInput)
+	if err != nil {
+		return nil, err
+	}
+	return riOutput, nil
+
+}
+
+func registerTaskDefinition(svc *ecs.ECS, mfsType MfsType) (*ecs.RegisterTaskDefinitionOutput, error) {
 	image := "quay.io/tuxera/" + mfsType.name + ":" + mfsType.version
 	input := &ecs.RegisterTaskDefinitionInput{
-		Family:                  aws.String(taskName), // Task Name
-		Cpu:                     aws.String("256"),    // 0.25vCPU
-		Memory:                  aws.String("512"),    // 512MB
+		Family:                  aws.String(mfsType.name), // Task Name
+		Cpu:                     aws.String("256"),        // 0.25vCPU
+		Memory:                  aws.String("512"),        // 512MB
 		NetworkMode:             aws.String("awsvpc"),
 		RequiresCompatibilities: aws.StringSlice([]string{"FARGATE"}),
 		ContainerDefinitions: []*ecs.ContainerDefinition{
 			{
-				Essential: aws.Bool(true),
-				Image:     aws.String(image),
-				Name:      aws.String("moosefs-server"),
+				Essential:   aws.Bool(true),
+				Image:       aws.String(image),
+				Name:        aws.String("moosefs-server"),
+				Environment: mfsType.Env,
 			},
 		},
 	}
@@ -199,7 +321,7 @@ func deregisterTaskDefinition(svc *ecs.ECS, taskName, revision string) (*ecs.Der
 	return result, nil
 }
 
-func createSecurityGroup(name, desc, region string) (*ec2.CreateSecurityGroupOutput, error) {
+func createSecurityGroup(name, desc, region string) ([]*ec2.SecurityGroup, error) {
 	// create svc
 	sess, err := session.NewSession(&aws.Config{
 		Region: aws.String(region)},
@@ -220,39 +342,66 @@ func createSecurityGroup(name, desc, region string) (*ec2.CreateSecurityGroupOut
 		return nil, errors.New("No VPCs found to associate security group with")
 	}
 	vpcID := aws.StringValue(result.Vpcs[0].VpcId)
-	// Create vpc
-	createRes, err := svc.CreateSecurityGroup(&ec2.CreateSecurityGroupInput{
-		GroupName:   aws.String(name),
-		Description: aws.String(desc),
-		VpcId:       aws.String(vpcID),
-	})
-	if err != nil {
-		return nil, err
-	}
-	_, err = svc.AuthorizeSecurityGroupIngress(&ec2.AuthorizeSecurityGroupIngressInput{
-		GroupName: aws.String(name),
-		IpPermissions: []*ec2.IpPermission{
-			(&ec2.IpPermission{}).
-				SetIpProtocol("tcp").
-				SetFromPort(9419).
-				SetToPort(9421).
-				SetIpRanges([]*ec2.IpRange{
-					{CidrIp: aws.String("0.0.0.0/0")},
-				}),
-			(&ec2.IpPermission{}).
-				SetIpProtocol("tcp").
-				SetFromPort(22).
-				SetToPort(22).
-				SetIpRanges([]*ec2.IpRange{
-					(&ec2.IpRange{}).
-						SetCidrIp("0.0.0.0/0"),
-				}),
+
+	// check if already exists
+	input := &ec2.DescribeSecurityGroupsInput{
+		GroupNames: []*string{
+			aws.String(name),
 		},
-	})
-	if err != nil {
-		return nil, err
 	}
-	return createRes, nil
+	grps, err := svc.DescribeSecurityGroups(input)
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			switch aerr.Code() {
+			case "InvalidGroup.NotFound":
+				// Create security group
+				_, err := svc.CreateSecurityGroup(&ec2.CreateSecurityGroupInput{
+					GroupName:   aws.String(name),
+					Description: aws.String(desc),
+					VpcId:       aws.String(vpcID),
+				})
+				if err != nil {
+					return nil, err
+				}
+				_, err = svc.AuthorizeSecurityGroupIngress(&ec2.AuthorizeSecurityGroupIngressInput{
+					GroupName: aws.String(name),
+					IpPermissions: []*ec2.IpPermission{
+						(&ec2.IpPermission{}).
+							SetIpProtocol("tcp").
+							SetFromPort(9419).
+							SetToPort(9421).
+							SetIpRanges([]*ec2.IpRange{
+								{CidrIp: aws.String("0.0.0.0/0")},
+							}),
+						(&ec2.IpPermission{}).
+							SetIpProtocol("tcp").
+							SetFromPort(22).
+							SetToPort(22).
+							SetIpRanges([]*ec2.IpRange{
+								(&ec2.IpRange{}).
+									SetCidrIp("0.0.0.0/0"),
+							}),
+					},
+				})
+				if err != nil {
+					return nil, err
+				}
+				// check if it exists now and return/fail
+				grps, err = svc.DescribeSecurityGroups(input)
+				if err != nil {
+					return nil, err
+				}
+			default:
+				return nil, err
+			}
+		} else {
+			// Print the error, cast err to awserr.Error to get the Code and
+			// Message from an error.
+			fmt.Println(err.Error())
+		}
+	}
+
+	return grps.SecurityGroups, nil
 }
 
 func deleteSecurityGroup(groupID, region string) error {
@@ -270,7 +419,14 @@ func deleteSecurityGroup(groupID, region string) error {
 		GroupId: aws.String(groupID),
 	})
 	if err != nil {
-		return err
+		if aerr, ok := err.(awserr.Error); ok {
+			switch aerr.Code() {
+			case "InvalidGroup.NotFound":
+				break // IGNORE
+			default:
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -279,6 +435,118 @@ func createSubnets(name string) []string {
 	// TODO(anoop): Dynamic
 	subnets := []string{"subnet-a47092ed"}
 	return subnets
+}
+
+// GetPublicIP4 ...
+func GetPublicIP4(creds AwsCreds, region, clusterName, taskArn string) (*string, error) {
+
+	sess, err := session.NewSession(
+		&aws.Config{
+			Region:      aws.String(region),
+			Credentials: credentials.NewStaticCredentials(creds.ID, creds.secret, creds.token),
+		})
+	if err != nil {
+		return nil, err
+	}
+
+	svc := ecs.New(sess)
+
+	taskInput := &ecs.DescribeTasksInput{
+		Tasks:   []*string{aws.String(taskArn)},
+		Cluster: aws.String(clusterName),
+	}
+
+	descTasks, err := svc.DescribeTasks(taskInput)
+	if err != nil {
+		return nil, err
+	}
+
+	// Tasks: [{
+	//	Attachments: [{
+	//		Details: [{
+	//			Name: "networkInterfaceId",
+	//			Value: "eni-94d894a3"
+	//		},
+	ni, err := extractNI(descTasks.Tasks[0].Attachments) // extract networkInterfaceId
+	if err != nil {
+		return nil, err
+	}
+
+	svcEc2 := ec2.New(sess)
+	input := &ec2.DescribeNetworkInterfacesInput{
+		NetworkInterfaceIds: []*string{
+			aws.String(ni),
+		},
+	}
+	descNIs, err := svcEc2.DescribeNetworkInterfaces(input)
+	if err != nil {
+		return nil, err
+	}
+
+	// NetworkInterfaces: [{
+	//		Association: {
+	//		IpOwnerId: "amazon",
+	//		PublicDnsName: "ec2-52-48-31-230.eu-west-1.compute.amazonaws.com",
+	//		PublicIp: "52.48.31.230"
+	// },
+	nis := descNIs.NetworkInterfaces
+	if len(nis) < 1 {
+		return nil, errors.New("Unable to obtain DescribeNetworkInterfaces for: " + ni)
+	}
+	if nis[0].Association == nil {
+		return nil, errors.New("Association empty for NetworkInterface: " + ni)
+	}
+	return nis[0].Association.PublicIp, nil
+}
+
+func extractNI(attchmts []*ecs.Attachment) (string, error) {
+	if len(attchmts) < 1 {
+		return "", errors.New("Attachments missing for DescribeTasks")
+	}
+	details := attchmts[0].Details
+	if len(details) < 1 {
+		return "", errors.New("Details missing for DescribeTasks")
+	}
+	var ni string
+	for _, d := range details {
+		if *d.Name == "networkInterfaceId" {
+			ni = *d.Value
+		}
+	}
+	return ni, nil
+
+}
+
+// Misc methods
+
+func waitUntilTaskArn(clusterName string, svc *ecs.ECS, waitSecs time.Duration) error {
+	listInput := &ecs.ListTasksInput{
+		Cluster: aws.String(clusterName),
+	}
+
+	timeOutChan := make(chan bool)
+	tickChan := time.NewTicker(time.Second * 5).C // DescribeTasks every 5 seconds
+
+	go func() {
+		time.Sleep(time.Second * waitSecs)
+		timeOutChan <- true
+	}()
+
+	for {
+		select {
+		case <-tickChan:
+			d, err := svc.ListTasks(listInput)
+			if err != nil {
+				return errors.New("ListTasks failed with error: " + err.Error())
+			}
+			if len(d.TaskArns) > 0 {
+				return nil
+			}
+		case <-timeOutChan:
+			return errors.New("Timeout occured for ListTasks Arns for cluster: " + clusterName)
+		}
+	}
+
 }
 
 /*

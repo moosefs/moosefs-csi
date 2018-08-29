@@ -11,13 +11,16 @@ import (
 )
 
 var (
-	region      = "eu-west-1"
-	clusterName = "moosefs_cluster"
-	serviceName = "moosefs-server_service"
-	taskName    = "moosefs-server_task" // must be unique
-	creds       = AwsCreds{
-		ID:     "",
-		secret: "+yak1k/saFJarvoLb6",
+	region            = "eu-west-1"
+	clusterName       = "moosefs_cluster"
+	masterServiceName = "moosefs-master_service"
+	chunkServiceName  = "moosefs-chunk_service"
+	moosefsSg         = "moosefs-test-sg"
+	mfsTypeMaster     = MfsType{name: "moosefs-master", version: "0.0.1"}
+	creds             = AwsCreds{
+		ID:     "ASIAVQDDCCHDQZ55HCI5",
+		secret: "wkL1jJnjO7A8lIFuMXn78glEd1+n5cc+xSZgNtOW",
+		token:  "FQoGZXIvYXdzEKH//////////wEaDLzu0jopze0h1KKApyKsAa1MEKaTdH/nxChu3qTinxFjcOEKeVzimkd6mdF4/4BuuRv6KQL+LJDCoExjEyeDyK1ZvHOB/udBI8T9dkJOu0fo4bpCXi180VSFscC+sGs23qUbrXs0jry5w8Z7CWS62VkjBE03SBTXZydE0yWblqMkjcMQpGP8NLMRTgt0MhXifAQJ3y1w5knsGtZ6sx6b2969s334suvbZyyfeL8TzHLJ3BOnBdpGx6ceNMkoneqT3AU=",
 	}
 )
 
@@ -32,6 +35,114 @@ func TestCreateECSCluster(t *testing.T) {
 	if "ACTIVE" != *result.Cluster.Status {
 		t.Errorf("Cluster status check: ", "ACTIVE", *result.Cluster.Status)
 	}
+
+}
+
+func TestCreateDeleteSecurityGroup(t *testing.T) {
+	groups, err := createSecurityGroup(moosefsSg, "For testing moosefs Fargate", "eu-west-1")
+	if err != nil {
+		t.Errorf("Error occured creating security group:", err)
+	}
+	if err = deleteSecurityGroup(*groups[0].GroupId, "eu-west-1"); err != nil {
+		t.Errorf("GroupID creation/deletion failed:", err)
+	}
+}
+
+// Only for moosefs-master
+func TestCreateECSService(t *testing.T) {
+	_, err := CreateECSCluster(creds, region, clusterName)
+	if err != nil {
+		t.Errorf("Error occured while creating cluster: ", err)
+	}
+	// moosefs-master service
+	mfsTypeMaster := MfsType{name: "moosefs-master", version: "0.0.1"}
+	storeMaster, err := CreateECSService(creds, region, masterServiceName, clusterName, mfsTypeMaster)
+	if err != nil {
+		t.Errorf("Error creating service:", err)
+	}
+	resultService := storeMaster.Service
+	if resultService == nil || resultService.Service == nil {
+		// already existing cluster
+		if len(storeMaster.TaskList.TaskArns) < 0 {
+			t.Errorf("Task Arns empty", storeMaster.TaskList)
+		}
+	} else {
+		// newly created
+		if masterServiceName != *storeMaster.Service.Service.ServiceName {
+			t.Errorf("Wrong service name: ", "moosefs-server_service", *resultService.Service.ServiceName)
+		}
+	}
+	result, err := DeleteECSService(creds, region, chunkServiceName, clusterName, storeMaster)
+	if err != nil {
+		t.Errorf("Error deleting service", err)
+	}
+	if "DRAINING" != *result.Service.Status {
+		t.Errorf("Wrong service status: ", "DRAINING", *result.Service.Status)
+	}
+	DeleteECSCluster(creds, region, clusterName)
+	/*
+		// moosefs-chunk service
+		mfsTypeChunk := MfsType{name: "moosefs-chunk", version: "0.0.1"}
+		storeChunk, err := CreateECSService(creds, region, chunkServiceName, clusterName, mfsTypeChunk)
+		if err != nil {
+			t.Errorf("Error creating service:", err)
+		}
+		if chunkServiceName != *storeChunk.Service.Service.ServiceName {
+			t.Errorf("Wrong service name: ", "moosefs-server_service", *storeChunk.Service.Service.ServiceName)
+		}
+	*/
+	/*
+	 */
+}
+func TestGetPublicIP4(t *testing.T) {
+	// prepare
+
+	_, err := CreateECSCluster(creds, region, clusterName)
+	if err != nil {
+		t.Errorf("Error occured while creating cluster: ", err)
+	}
+
+	// moosefs-master service
+
+	storeMaster, err := CreateECSService(creds, region, masterServiceName, clusterName, mfsTypeMaster)
+	if err != nil {
+		t.Errorf("Error creating service:", err)
+	}
+
+	// GetIp
+	ip, err := GetPublicIP4(creds, region, clusterName, *storeMaster.TaskList.TaskArns[0])
+	if err != nil || ip == nil {
+		t.Errorf("Error GetIPv4()", err)
+	}
+
+	// cleanup
+	_, err = DeleteECSService(creds, region, chunkServiceName, clusterName, storeMaster)
+	if err != nil {
+		t.Errorf("Error deleting service", err)
+	}
+}
+
+func TestCreateDeleteEc2Instance(t *testing.T) {
+	storeMaster, err := CreateECSService(creds, region, masterServiceName, clusterName, mfsTypeMaster)
+	if err != nil {
+		t.Errorf("Error creating service:", err)
+	}
+
+	// GetIp
+	ip, err := GetPublicIP4(creds, region, clusterName, *storeMaster.TaskList.TaskArns[0])
+	if err != nil || ip == nil {
+		t.Errorf("Error GetIPv4()", err)
+	}
+	res, err := CreateEc2Instance(region, clusterName, *ip, 100)
+	if err != nil {
+		t.Errorf("Error occured creating instance:", err)
+	}
+	t.Errorf("res", res)
+	/*
+		if err = deleteSecurityGroup(*groups[0].GroupId, "eu-west-1"); err != nil {
+			t.Errorf("GroupID creation/deletion failed:", err)
+		}
+	*/
 
 }
 
@@ -59,15 +170,25 @@ func TestRegisterDeregisterTaskDefinition(t *testing.T) {
 	}
 
 	svc := ecs.New(sess)
-	mfsType := MfsType{name: "moosefs-master", version: "0.0.1"}
-	result, err := registerTaskDefinition(svc, taskName, mfsType)
+	mfsType := MfsType{
+		name:    "moosefs-master",
+		version: "0.0.1",
+		Env: []*ecs.KeyValuePair{
+			&ecs.KeyValuePair{
+				Name:  aws.String("mfsmaster"),
+				Value: aws.String("8.8.8.8"),
+			},
+		},
+	}
+	result, err := registerTaskDefinition(svc, mfsType)
 	if err != nil {
 		t.Errorf("Register task definition failed: ", err)
 	}
 	if "ACTIVE" != *result.TaskDefinition.Status {
 		t.Errorf("Task definition registration status: ", "ACTIVE", *result.TaskDefinition.Status)
 	}
-	result1, err := deregisterTaskDefinition(svc, taskName, strconv.FormatInt(*result.TaskDefinition.Revision, 10))
+	t.Errorf("result", result)
+	result1, err := deregisterTaskDefinition(svc, mfsType.name, strconv.FormatInt(*result.TaskDefinition.Revision, 10))
 	if err != nil {
 		t.Errorf("Register task definition failed: ", err)
 	}
@@ -76,41 +197,32 @@ func TestRegisterDeregisterTaskDefinition(t *testing.T) {
 	}
 }
 
-func TestCreateDeleteECSService(t *testing.T) {
-	_, err := CreateECSCluster(creds, region, clusterName)
-	if err != nil {
-		t.Errorf("Error occured while creating cluster: ", err)
-	}
-	mfsType := MfsType{name: "moosefs-master", version: "0.0.1"}
-	store, err := CreateECSService(creds, region, serviceName, clusterName, taskName, mfsType)
-	if err != nil {
-		t.Errorf("Error creating service:", err)
-	}
-	resultService := store.Service
-	if "moosefs-server_service" != *resultService.Service.ServiceName {
-		t.Errorf("Wrong service name: ", "moosefs-server_service", *resultService.Service.ServiceName)
-	}
+/*
+# Install fuse and others
+apt-get update && apt-get install -y wget gnupg2 fuse libfuse2 ca-certificates e2fsprogs
+# Install certificates
+wget -O - http://ppa.moosefs.com/moosefs.key | apt-key add -
+. /etc/lsb-release && echo "deb http://ppa.moosefs.com/moosefs-3/apt/ubuntu/$DISTRIB_CODENAME $DISTRIB_CODENAME main" > /etc/apt/sources.list.d/moosefs.list
+# Install chunkserver
+apt-get update && apt-get install -y moosefs-chunkserver
+# For testing
+mkdir -p /mnt/sdb1 && chown -R mfs:mfs /mnt/sdb1 && echo "/mnt/sdb1 1GiB" >> /etc/mfs/mfshdd.cfg
+# Start the chunkserver service
+systemctl start moosefs-chunkserver
 
-	result, err := DeleteECSService(creds, region, serviceName, clusterName, store)
-	if err != nil {
-		t.Errorf("Error deleting service", err)
-	}
-	if "DRAINING" != *result.Service.Status {
-		t.Errorf("Wrong service name: ", "moosefs-server_service", *result.Service.Status)
-	}
-	DeleteECSCluster(creds, region, clusterName)
 
-}
+--------------
 
-func TestDeleteECSService(t *testing.T) {
-}
+apt-get update && apt-get install -y wget gnupg2 fuse libfuse2 ca-certificates e2fsprogs
 
-func TestCreateDeleteSecurityGroup(t *testing.T) {
-	resp, err := createSecurityGroup("moosefs-test1", "For testing moosefs Fargate", "eu-west-1")
-	if err != nil {
-		t.Errorf("Error occured:", err)
-	}
-	if err = deleteSecurityGroup(*resp.GroupId, "eu-west-1"); err != nil {
-		t.Errorf("GroupID creation/deletion failed:", err)
-	}
-}
+wget -O - http://ppa.moosefs.com/moosefs.key | apt-key add -
+. /etc/lsb-release && echo "deb http://ppa.moosefs.com/moosefs-3/apt/ubuntu/$DISTRIB_CODENAME $DISTRIB_CODENAME main" > /etc/apt/sources.list.d/moosefs.list
+
+apt-get update && apt-get install -y moosefs-client
+
+
+
+
+AMI Name: amzn-ami-hvm-2018.03.0.20180412-x86_64-ebs
+
+*/
