@@ -45,3 +45,12 @@ push-mfs-chunk:
 	@docker push quay.io/tuxera/moosefs-chunk:$(VERSION)
 	@docker push quay.io/tuxera/moosefs-chunk:latest
 	@echo "==> Your image is now available at quay.io/tuxera/moosefs-chunk:$(VERSION)/latest"
+
+push-mfs-client:
+	@echo "==> Building the quay.io/tuxera/moosefs-client docker image"
+	@docker build -t quay.io/tuxera/moosefs-client:$(VERSION) -f moosefs-client.Dockerfile .
+	@docker build -t quay.io/tuxera/moosefs-client:latest -f moosefs-client.Dockerfile .
+	@echo "==> Publishing quay.io/tuxera/moosefs-client:$(VERSION)"
+	@docker push quay.io/tuxera/moosefs-client:$(VERSION)
+	@docker push quay.io/tuxera/moosefs-client:latest
+	@echo "==> Your image is now available at quay.io/tuxera/moosefs-client:$(VERSION)/latest"
