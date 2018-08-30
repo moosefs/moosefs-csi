@@ -26,8 +26,12 @@ const (
 //   csi.NodeServer
 //
 type Driver struct {
-	endpoint string
-	nodeID   string
+	endpoint        string
+	nodeID          string
+	awsAccessKey    string
+	awsSecret       string
+	awsSessionToken string
+	awsRegion       string
 
 	srv     *grpc.Server
 	log     *logrus.Entry
@@ -37,13 +41,17 @@ type Driver struct {
 // NewDriver returns a CSI plugin that contains the necessary gRPC
 // interfaces to interact with Kubernetes over unix domain sockets for
 // managaing Moosefs Storage
-func NewDriver(ep, url string) (*Driver, error) {
+func NewDriver(ep, awsAccessKeyID, awsSecret, awsSessionToken, awsRegion string) (*Driver, error) {
 	nodeID := ep // TODO(Anoop): get hostname from EP
 
 	return &Driver{
-		endpoint: ep,
-		nodeID:   nodeID,
-		mounter:  &mounter{},
+		endpoint:        ep,
+		nodeID:          nodeID,
+		awsAccessKey:    awsAccessKeyID,
+		awsSecret:       awsSecret,
+		awsSessionToken: awsSessionToken,
+		awsRegion:       awsRegion,
+		mounter:         &mounter{},
 		log: logrus.New().WithFields(logrus.Fields{
 			"node_id": nodeID,
 		}),
