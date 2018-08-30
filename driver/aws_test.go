@@ -16,11 +16,10 @@ var (
 	masterServiceName = "moosefs-master_service"
 	chunkServiceName  = "moosefs-chunk_service"
 	moosefsSg         = "moosefs-test-sg"
-	mfsTypeMaster     = MfsType{name: "moosefs-master", version: "0.0.1"}
 	creds             = AwsCreds{
-		ID:     "ASIAVQDDCCHDQZ55HCI5",
-		secret: "wkL1jJnjO7A8lIFuMXn78glEd1+n5cc+xSZgNtOW",
-		token:  "FQoGZXIvYXdzEKH//////////wEaDLzu0jopze0h1KKApyKsAa1MEKaTdH/nxChu3qTinxFjcOEKeVzimkd6mdF4/4BuuRv6KQL+LJDCoExjEyeDyK1ZvHOB/udBI8T9dkJOu0fo4bpCXi180VSFscC+sGs23qUbrXs0jry5w8Z7CWS62VkjBE03SBTXZydE0yWblqMkjcMQpGP8NLMRTgt0MhXifAQJ3y1w5knsGtZ6sx6b2969s334suvbZyyfeL8TzHLJ3BOnBdpGx6ceNMkoneqT3AU=",
+		ID:     "ASIAVQDDCCHDXVB7GJXL",
+		secret: "0fDQ8V5m/jAFyoYmpSlVB8pcStvZg5dBY08TsAqR",
+		token:  "FQoGZXIvYXdzEND//////////wEaDMJCHRuRhVw1VjmWFSKsAa/Yy7Wc9NVhGUNGR6ckBybIcRKqJ/4WovFKu1IXBSd5N5zURQV+vK8I+mHM0JGsfuTQdjnk76fSutrIpZhE15+kLYly4XfPg9SF3ZqMGRmQMSUWyqaDtT1Hw4Q6ikDaS2j2vGJiOfWoN9zgyreCh8evltdUbYsxkoZd+6Bf30Vx/7bRarSD4/FyXgQICNPcORoXewtJdo6DxZYVQb2UglhnvUElKTATXT7QE1so7Z2e3AU=",
 	}
 )
 
@@ -72,7 +71,7 @@ func TestCreateECSService(t *testing.T) {
 			t.Errorf("Wrong service name: ", "moosefs-server_service", *resultService.Service.ServiceName)
 		}
 	}
-	result, err := DeleteECSService(creds, region, chunkServiceName, clusterName, storeMaster)
+	result, err := DeleteECSService(creds, region, masterServiceName, clusterName, storeMaster)
 	if err != nil {
 		t.Errorf("Error deleting service", err)
 	}
@@ -123,6 +122,7 @@ func TestGetPublicIP4(t *testing.T) {
 }
 
 func TestCreateDeleteEc2Instance(t *testing.T) {
+
 	storeMaster, err := CreateECSService(creds, region, masterServiceName, clusterName, mfsTypeMaster)
 	if err != nil {
 		t.Errorf("Error creating service:", err)
@@ -133,11 +133,21 @@ func TestCreateDeleteEc2Instance(t *testing.T) {
 	if err != nil || ip == nil {
 		t.Errorf("Error GetIPv4()", err)
 	}
-	res, err := CreateEc2Instance(region, clusterName, *ip, 100)
+
+	_, err = CreateEc2Instance(region, clusterName, *ip, *ip+":9412", 100)
 	if err != nil {
 		t.Errorf("Error occured creating instance:", err)
 	}
-	t.Errorf("res", res)
+
+	// Delete
+	_, err = DeleteEc2Instance(*ip+":9412", region)
+	if err != nil {
+		t.Errorf("Deleting Ec2 instance failed: ", err)
+	}
+	_, err = DeleteECSService(creds, region, masterServiceName, clusterName, storeMaster)
+	if err != nil {
+		t.Errorf("Deleting ECS service failed: ", err)
+	}
 	/*
 		if err = deleteSecurityGroup(*groups[0].GroupId, "eu-west-1"); err != nil {
 			t.Errorf("GroupID creation/deletion failed:", err)

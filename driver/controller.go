@@ -2,7 +2,6 @@ package driver
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi/v0"
@@ -21,7 +20,7 @@ const (
 )
 
 const (
-	defaultVolumeSizeInGB = 16 * GB
+	defaultVolumeSizeInGB = 16
 )
 
 // CreateVolume creates a new volume from the given request. The function is
@@ -44,18 +43,18 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 
 	ll := d.log.WithFields(logrus.Fields{
 		"volume_name":             volumeName,
-		"storage_size_giga_bytes": size / GB,
+		"storage_size_giga_bytes": size,
 		"method":                  "create_volume",
 	})
 	ll.Info("create volume called")
 
 	ll.WithField("volume_req", nil).Info("creating volume")
 
-	// TODO(Anoop): pre-provisioned volumes for now
-	// Ideally: start moosefs docker on Azure, GCP, AWS with IP ep and
-	// provision and mount the needed disk to that container
-	// createVol()
-	volID := "35.228.134.224:9421"
+	// TODO(Anoop): Also include moosefs docker on Azure, GCP
+	volID, err := AWSCreateVol(volumeName, d.awsAccessKey, d.awsSecret, d.awsSessionToken, d.awsRegion, size)
+	if err != nil {
+		return nil, err
+	}
 
 	resp := &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
@@ -80,10 +79,8 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 	})
 	ll.Info("delete volume called")
 
-	// TODO(Anoop): pre-provisioned volumes for now
-	// Ideally: start moosefs docker on Azure, GCP, AWS with IP ep and
-	// provision and mount the needed disk to that container
-	// deleteVol()
+	// TODO(Anoop): Also include moosefs docker on Azure, GCP
+	_, err := AWSDeleteVol(req.VolumeId, d.awsAccessKey, d.awsSecret, d.awsSessionToken, d.awsRegion)
 
 	ll.WithField("response", nil).Info("volume is deleted")
 	return &csi.DeleteVolumeResponse{}, nil
@@ -264,33 +261,6 @@ func (d *Driver) ControllerGetCapabilities(ctx context.Context, req *csi.Control
 		"method":   "controller_get_capabilities",
 	}).Info("controller get capabilities called")
 	return resp, nil
-}
-
-// extractStorage extracts the storage size in GB from the given capacity
-// range. If the capacity range is not satisfied it returns the default volume
-// size.
-func extractStorage(capRange *csi.CapacityRange) (int64, error) {
-	if capRange == nil {
-		return defaultVolumeSizeInGB, nil
-	}
-
-	if capRange.RequiredBytes == 0 && capRange.LimitBytes == 0 {
-		return defaultVolumeSizeInGB, nil
-	}
-
-	minSize := capRange.RequiredBytes
-
-	// limitBytes might be zero
-	maxSize := capRange.LimitBytes
-	if capRange.LimitBytes == 0 {
-		maxSize = minSize
-	}
-
-	if minSize == maxSize {
-		return minSize, nil
-	}
-
-	return 0, errors.New("requiredBytes and LimitBytes are not the same")
 }
 
 // waitAction waits until the given action for the volume is completed

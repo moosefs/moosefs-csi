@@ -13,6 +13,11 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ecs"
+	csi "github.com/container-storage-interface/spec/lib/go/csi/v0"
+)
+
+var (
+	mfsTypeMaster = MfsType{name: "moosefs-master", version: "0.0.1"}
 )
 
 type AwsCreds struct {
@@ -24,7 +29,7 @@ type AwsCreds struct {
 type MfsType struct {
 	name    string
 	version string
-	Env     []*ecs.KeyValuePair
+	Env     []*ecs.KeyValuePair // TODO(anoop): remove
 }
 
 // Maintains the AWS entities created during ECS creation
@@ -33,6 +38,64 @@ type ECSStore struct {
 	Task          *ecs.RegisterTaskDefinitionOutput
 	SecurityGroup *ec2.SecurityGroup
 	TaskList      *ecs.ListTasksOutput
+}
+
+// TODO(anoop): AWS/GCP/Azure credentials
+// TODO(anoop): Check for storage distribution (master, chunk etc.)
+func AWSCreateVol(volName, accessKeyID, secret, sessionToken, region string, volSize int64) (string, error) {
+
+	creds := AwsCreds{
+		ID:     accessKeyID,
+		secret: secret,
+		token:  sessionToken,
+	}
+
+	// Create the fargate cluster for master
+	_, err := CreateECSCluster(creds, region, volName)
+	if err != nil {
+		return "", err
+	}
+
+	// Create the fargate master service
+	store, err := CreateECSService(creds, region, volName, volName, mfsTypeMaster)
+	if err != nil {
+		return "", err
+	}
+
+	// Get Master endpoint
+	ep, err := GetPublicIP4(creds, region, volName, *store.TaskList.TaskArns[0])
+	if err != nil {
+		return "", err
+	}
+
+	volID := *ep + ":9421"
+	// Attach chunkserver volumes
+	_, err = CreateEc2Instance(region, *store.SecurityGroup.GroupName, *ep, volID, volSize)
+
+	return volID, nil // 35.228.134.224:9421
+
+}
+
+// AWSDeleteVol ...
+func AWSDeleteVol(volID, accessKeyID, secret, sessionToken, region string) error {
+
+	creds := AwsCreds{
+		ID:     accessKeyID,
+		secret: secret,
+		token:  sessionToken,
+	}
+
+	_, err := DeleteEc2Instance(volID, region)
+	if err != nil {
+		return err
+	}
+
+	volName := volID // TODO(anoop): get volName from volID
+	_, err = DeleteECSService(creds, region, volName, volName, ECSStore{})
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // CreateECSCluster ...
@@ -143,7 +206,7 @@ func CreateECSService(creds AwsCreds, region, name, clusterName string, mfsType 
 		store.Service = result
 	}
 
-	// Wait for task running
+	// Wait for task running // TODO(anoop): This is not enough, sometimes 'Association empty for NetworkInterface:'
 	if err := waitUntilTaskArn(clusterName, svc, 60); err != nil {
 		return store, err
 	}
@@ -152,9 +215,12 @@ func CreateECSService(creds AwsCreds, region, name, clusterName string, mfsType 
 	listTaskInput := &ecs.ListTasksInput{
 		Cluster: aws.String(clusterName),
 	}
+	listTaskOutput, err := svc.ListTasks(listTaskInput)
+	store.TaskList = listTaskOutput
 
-	result1, err := svc.ListTasks(listTaskInput)
-	store.TaskList = result1
+	if err = waitUntilTaskActive(clusterName, *listTaskOutput.TaskArns[0], svc, 60); err != nil {
+		return store, err
+	}
 
 	return store, nil
 }
@@ -192,15 +258,18 @@ func DeleteECSService(creds AwsCreds, region, name, clusterName string, store EC
 	}
 
 	// Delete security group
+	/* TODO(anoop): Needs waiting for Ec2 instance shutdown
 	if err := deleteSecurityGroup(*store.SecurityGroup.GroupId, region); err != nil {
 		return nil, err
 	}
+	*/
 	return result, nil
 }
 
 // CreateEc2Instance ...
 // TODO(anoop): not idempotent
-func CreateEc2Instance(region, sg, masterIP string, volSize int64) (*ec2.Reservation, error) {
+// TODO(anoop): Wait for the chunkService
+func CreateEc2Instance(region, sg, masterIP, volID string, volSize int64) (*ec2.Reservation, error) {
 	devName := "/dev/xvdh"
 	userData := func(volSize, masterIP string) string {
 		return `
@@ -266,6 +335,17 @@ echo 'MASTER_HOST = ` + masterIP + `' > /etc/mfs/mfschunkserver.cfg
 		MaxCount:         aws.Int64(1),
 		UserData:         aws.String(userDataEncoded),
 		SecurityGroupIds: []*string{aws.String(sg)},
+		TagSpecifications: []*ec2.TagSpecification{
+			{
+				ResourceType: aws.String("instance"),
+				Tags: []*ec2.Tag{
+					{
+						Key:   aws.String("volID"),
+						Value: aws.String(volID),
+					},
+				},
+			},
+		},
 		BlockDeviceMappings: []*ec2.BlockDeviceMapping{
 			{
 				DeviceName: aws.String("/dev/xvdh"),
@@ -280,8 +360,59 @@ echo 'MASTER_HOST = ` + masterIP + `' > /etc/mfs/mfschunkserver.cfg
 	if err != nil {
 		return nil, err
 	}
+
+	// Wait for instances to be up
+	if err = waitUntilInstanceRunning(*riOutput.Instances[0].InstanceId, svc, 60); err != nil {
+		return nil, err
+	}
+
 	return riOutput, nil
 
+}
+
+func DeleteEc2Instance(volID string, region string) (*ec2.TerminateInstancesOutput, error) {
+
+	// create svc
+	sess, err := session.NewSession(&aws.Config{
+		Region: aws.String(region)},
+	)
+	if err != nil {
+		return nil, err
+	}
+	// Create an EC2 service client.
+	svc := ec2.New(sess)
+
+	descInput := &ec2.DescribeInstancesInput{
+		Filters: []*ec2.Filter{
+			{
+				Name: aws.String("tag:volID"),
+				Values: []*string{
+					aws.String(volID),
+				},
+			},
+		},
+	}
+	descOutput, err := svc.DescribeInstances(descInput)
+	if err != nil {
+		return nil, err
+	}
+
+	var terminateOutput *ec2.TerminateInstancesOutput
+	if len(descOutput.Reservations) > 0 && len(descOutput.Reservations[0].Instances) > 0 {
+		terminateInput := &ec2.TerminateInstancesInput{
+			InstanceIds: []*string{
+				descOutput.Reservations[0].Instances[0].InstanceId,
+			},
+		}
+		terminateOutput, err = svc.TerminateInstances(terminateInput)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		return nil, errors.New("DescribeInstances didnt return Reservations or Instances")
+	}
+
+	return terminateOutput, nil
 }
 
 func registerTaskDefinition(svc *ecs.ECS, mfsType MfsType) (*ecs.RegisterTaskDefinitionOutput, error) {
@@ -294,10 +425,9 @@ func registerTaskDefinition(svc *ecs.ECS, mfsType MfsType) (*ecs.RegisterTaskDef
 		RequiresCompatibilities: aws.StringSlice([]string{"FARGATE"}),
 		ContainerDefinitions: []*ecs.ContainerDefinition{
 			{
-				Essential:   aws.Bool(true),
-				Image:       aws.String(image),
-				Name:        aws.String("moosefs-server"),
-				Environment: mfsType.Env,
+				Essential: aws.Bool(true),
+				Image:     aws.String(image),
+				Name:      aws.String("moosefs-server"),
 			},
 		},
 	}
@@ -547,6 +677,101 @@ func waitUntilTaskArn(clusterName string, svc *ecs.ECS, waitSecs time.Duration) 
 		}
 	}
 
+}
+
+func waitUntilTaskActive(clusterName, taskArn string, svc *ecs.ECS, waitSecs time.Duration) error {
+
+	descTaskInput := &ecs.DescribeTasksInput{
+		Cluster: aws.String(clusterName),
+		Tasks: []*string{
+			aws.String(taskArn),
+		},
+	}
+	timeOutChan := make(chan bool)
+	tickChan := time.NewTicker(time.Second * 5).C // DescribeTasks every 5 seconds
+
+	go func() {
+		time.Sleep(time.Second * waitSecs)
+		timeOutChan <- true
+	}()
+
+	for {
+		select {
+		case <-tickChan:
+			d, err := svc.DescribeTasks(descTaskInput)
+			if err != nil {
+				return errors.New("DescribeTasks failed with error: " + err.Error())
+			}
+			if len(d.Tasks) > 0 && *d.Tasks[0].LastStatus == "RUNNING" {
+				return nil
+			}
+		case <-timeOutChan:
+			return errors.New("Timeout occured for DescribeTasks Arns for cluster: " + clusterName)
+		}
+	}
+
+}
+
+func waitUntilInstanceRunning(instanceID string, svc *ec2.EC2, waitSecs time.Duration) error {
+
+	descStatusInput := &ec2.DescribeInstanceStatusInput{
+		InstanceIds: []*string{
+			aws.String(instanceID),
+		},
+	}
+
+	timeOutChan := make(chan bool)
+	tickChan := time.NewTicker(time.Second * 5).C // DescribeTasks every 5 seconds
+
+	go func() {
+		time.Sleep(time.Second * waitSecs)
+		timeOutChan <- true
+	}()
+
+	for {
+		select {
+		case <-tickChan:
+			d, err := svc.DescribeInstanceStatus(descStatusInput)
+			if err != nil {
+				return errors.New("DescribeInstances failed with error: " + err.Error())
+			}
+			if len(d.InstanceStatuses) > 0 {
+				status := d.InstanceStatuses[0]
+				if status.InstanceState != nil && *status.InstanceState.Code == 16 {
+					return nil
+				}
+			}
+		case <-timeOutChan:
+			return errors.New("Timeout occured for DescribeInstances for Instance: " + instanceID)
+		}
+	}
+}
+
+// extractStorage extracts the storage size in GB from the given capacity
+// range. If the capacity range is not satisfied it returns the default volume
+// size.
+func extractStorage(capRange *csi.CapacityRange) (int64, error) {
+	if capRange == nil {
+		return defaultVolumeSizeInGB, nil
+	}
+
+	if capRange.RequiredBytes == 0 && capRange.LimitBytes == 0 {
+		return defaultVolumeSizeInGB, nil
+	}
+
+	minSize := capRange.RequiredBytes
+
+	// limitBytes might be zero
+	maxSize := capRange.LimitBytes
+	if capRange.LimitBytes == 0 {
+		maxSize = minSize
+	}
+
+	if minSize == maxSize {
+		return minSize, nil
+	}
+
+	return 0, errors.New("requiredBytes and LimitBytes are not the same")
 }
 
 /*
