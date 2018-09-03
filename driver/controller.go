@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/aws/aws-sdk-go/service/ec2"
 	csi "github.com/container-storage-interface/spec/lib/go/csi/v0"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
@@ -51,15 +52,16 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 	ll.WithField("volume_req", nil).Info("creating volume")
 
 	// TODO(Anoop): Also include moosefs docker on Azure, GCP
-	volID, err := AWSCreateVol(volumeName, d.awsAccessKey, d.awsSecret, d.awsSessionToken, d.awsRegion, size)
+	volOutput, err := AWSCreateVol(volumeName, d, size)
 	if err != nil {
 		return nil, err
 	}
 
 	resp := &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
-			Id:            volID,
+			Id:            volOutput.volID,
 			CapacityBytes: size,
+			Attributes:    map[string]string{"instanceID": *volOutput.Ec2Res.Instances[0].InstanceId},
 		},
 	}
 
@@ -80,7 +82,10 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 	ll.Info("delete volume called")
 
 	// TODO(Anoop): Also include moosefs docker on Azure, GCP
-	_, err := AWSDeleteVol(req.VolumeId, d.awsAccessKey, d.awsSecret, d.awsSessionToken, d.awsRegion)
+	err := AWSDeleteVol(req.VolumeId, d)
+	if err != nil {
+		return nil, err
+	}
 
 	ll.WithField("response", nil).Info("volume is deleted")
 	return &csi.DeleteVolumeResponse{}, nil
@@ -101,16 +106,25 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 	}
 
 	ll := d.log.WithFields(logrus.Fields{
-		"volume_id": req.VolumeId,
-		"node_id":   req.NodeId,
-		"method":    "controller_publish_volume",
+		"volume_id":  req.VolumeId,
+		"node_id":    req.NodeId,
+		"instanceID": req.VolumeAttributes["instanceID"],
+		"method":     "controller_publish_volume",
 	})
 	ll.Info("controller publish volume called")
 
-	// TODO(Anoop): pre-provisioned volumes for now
-	// Ideally: start moosefs docker on Azure, GCP, AWS with IP ep and
-	// provision and mount the needed disk to that container
-	// AttachVol()
+	// TODO(Anoop): For Azure and GCP
+	// Create AWS Session
+	sess, err := CreateAWSSession(d)
+	if err != nil {
+		return nil, err
+	}
+	svc := ec2.New(sess)
+	// Wait for instances to be up
+	if err := waitUntilInstanceRunning(req.VolumeAttributes["instanceID"], svc, 60); err != nil {
+		return nil, err
+	}
+	ll.Info("Ec2instance running")
 
 	ll.Info("volume is attached")
 	return &csi.ControllerPublishVolumeResponse{}, nil

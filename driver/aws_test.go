@@ -4,32 +4,45 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ecs"
 )
 
 var (
-	region            = "eu-west-1"
-	clusterName       = "moosefs_cluster"
-	masterServiceName = "moosefs-master_service"
+	region = "eu-west-1"
+	//	clusterName       = "moosefs_cluster"
+	//	masterServiceName = "moosefs-master_service"
+	masterServiceName = "pvc-test-82daf9b5-ac54-11e8-a108-42010aa401ac"
+	clusterName       = "pvc-test-82daf9b5-ac54-11e8-a108-42010aa401ac"
 	chunkServiceName  = "moosefs-chunk_service"
 	moosefsSg         = "moosefs-test-sg"
 	creds             = AwsCreds{
-		ID:     "ASIAVQDDCCHDXVB7GJXL",
-		secret: "0fDQ8V5m/jAFyoYmpSlVB8pcStvZg5dBY08TsAqR",
-		token:  "FQoGZXIvYXdzEND//////////wEaDMJCHRuRhVw1VjmWFSKsAa/Yy7Wc9NVhGUNGR6ckBybIcRKqJ/4WovFKu1IXBSd5N5zURQV+vK8I+mHM0JGsfuTQdjnk76fSutrIpZhE15+kLYly4XfPg9SF3ZqMGRmQMSUWyqaDtT1Hw4Q6ikDaS2j2vGJiOfWoN9zgyreCh8evltdUbYsxkoZd+6Bf30Vx/7bRarSD4/FyXgQICNPcORoXewtJdo6DxZYVQb2UglhnvUElKTATXT7QE1so7Z2e3AU=",
+		ID:     "ASIAVQDDCCHDTRB7J37J",
+		token:  "FQoGZXIvYXdzEBoaDM6VlVVMo6nO7l+gfCKsASkZhiBR43LtOTdsqxDPvnChqzO59N44nk7NTMi/cU4zFa2rZQ3HhICZhr/ppEw8Z5yIFZcdaHpU5EMgOhsNZArCtPmILtm7WNRSZUxzZEN5IbmulhC9HdHezyO8fzDM5nfMnqiq2U2bg0onWQYHu3nF4jZH2Edgz6E3kbNcyJyCHcZ7UuaJoAXppIB/hOprW1Y19kEBXh62o5gQe7ncsgHzNUol28vAIo1ujDQok7iu3AU=",
+	}
+	d = &Driver{
+		log: logrus.New().WithFields(logrus.Fields{
+			"purpose": "testing",
+		}),
+		awsAccessKey:    creds.ID,
+		awsSecret:       creds.secret,
+		awsSessionToken: creds.token,
+		awsRegion:       region,
 	}
 )
 
 func TestCreateECSCluster(t *testing.T) {
-	result, err := CreateECSCluster(creds, region, clusterName)
+	// Create AWS Session
+	sess, err := CreateAWSSession(d)
+
+	result, err := CreateECSCluster(sess, clusterName)
 	if err != nil {
 		t.Errorf("Error occured: ", err)
 	}
-	if "moosefs_cluster" != *result.Cluster.ClusterName {
-		t.Errorf("Cluster status check: ", "moosefs_cluster", *result.Cluster.ClusterName)
+	if clusterName != *result.Cluster.ClusterName {
+		t.Errorf("Cluster status check: ", clusterName, *result.Cluster.ClusterName)
 	}
 	if "ACTIVE" != *result.Cluster.Status {
 		t.Errorf("Cluster status check: ", "ACTIVE", *result.Cluster.Status)
@@ -38,24 +51,29 @@ func TestCreateECSCluster(t *testing.T) {
 }
 
 func TestCreateDeleteSecurityGroup(t *testing.T) {
-	groups, err := createSecurityGroup(moosefsSg, "For testing moosefs Fargate", "eu-west-1")
+	// Create AWS Session
+	sess, err := CreateAWSSession(d)
+
+	groups, err := createSecurityGroup(moosefsSg, "For testing moosefs Fargate", d.awsRegion, sess)
 	if err != nil {
 		t.Errorf("Error occured creating security group:", err)
 	}
-	if err = deleteSecurityGroup(*groups[0].GroupId, "eu-west-1"); err != nil {
+	if err = deleteSecurityGroup(*groups[0].GroupId, d.awsRegion); err != nil {
 		t.Errorf("GroupID creation/deletion failed:", err)
 	}
 }
 
 // Only for moosefs-master
 func TestCreateECSService(t *testing.T) {
-	_, err := CreateECSCluster(creds, region, clusterName)
+	// Create AWS Session
+	sess, err := CreateAWSSession(d)
+
+	_, err = CreateECSCluster(sess, clusterName)
 	if err != nil {
 		t.Errorf("Error occured while creating cluster: ", err)
 	}
 	// moosefs-master service
-	mfsTypeMaster := MfsType{name: "moosefs-master", version: "0.0.1"}
-	storeMaster, err := CreateECSService(creds, region, masterServiceName, clusterName, mfsTypeMaster)
+	storeMaster, err := CreateECSService(sess, d, masterServiceName, clusterName, mfsTypeMaster)
 	if err != nil {
 		t.Errorf("Error creating service:", err)
 	}
@@ -71,51 +89,54 @@ func TestCreateECSService(t *testing.T) {
 			t.Errorf("Wrong service name: ", "moosefs-server_service", *resultService.Service.ServiceName)
 		}
 	}
-	result, err := DeleteECSService(creds, region, masterServiceName, clusterName, storeMaster)
-	if err != nil {
-		t.Errorf("Error deleting service", err)
-	}
-	if "DRAINING" != *result.Service.Status {
-		t.Errorf("Wrong service status: ", "DRAINING", *result.Service.Status)
-	}
-	DeleteECSCluster(creds, region, clusterName)
 	/*
-		// moosefs-chunk service
-		mfsTypeChunk := MfsType{name: "moosefs-chunk", version: "0.0.1"}
-		storeChunk, err := CreateECSService(creds, region, chunkServiceName, clusterName, mfsTypeChunk)
+		result, err := DeleteECSService(creds, region, masterServiceName, clusterName, storeMaster)
 		if err != nil {
-			t.Errorf("Error creating service:", err)
+			t.Errorf("Error deleting service", err)
 		}
-		if chunkServiceName != *storeChunk.Service.Service.ServiceName {
-			t.Errorf("Wrong service name: ", "moosefs-server_service", *storeChunk.Service.Service.ServiceName)
+		if "DRAINING" != *result.Service.Status {
+			t.Errorf("Wrong service status: ", "DRAINING", *result.Service.Status)
 		}
+		DeleteECSCluster(creds, region, clusterName)
+		/*
+			// moosefs-chunk service
+			mfsTypeChunk := MfsType{name: "moosefs-chunk", version: "0.0.1"}
+			storeChunk, err := CreateECSService(creds, region, chunkServiceName, clusterName, mfsTypeChunk)
+			if err != nil {
+				t.Errorf("Error creating service:", err)
+			}
+			if chunkServiceName != *storeChunk.Service.Service.ServiceName {
+				t.Errorf("Wrong service name: ", "moosefs-server_service", *storeChunk.Service.Service.ServiceName)
+			}
 	*/
 	/*
 	 */
 }
 func TestGetPublicIP4(t *testing.T) {
 	// prepare
+	// Create AWS Session
+	sess, err := CreateAWSSession(d)
 
-	_, err := CreateECSCluster(creds, region, clusterName)
+	_, err = CreateECSCluster(sess, clusterName)
 	if err != nil {
 		t.Errorf("Error occured while creating cluster: ", err)
 	}
 
 	// moosefs-master service
 
-	storeMaster, err := CreateECSService(creds, region, masterServiceName, clusterName, mfsTypeMaster)
+	storeMaster, err := CreateECSService(sess, d, masterServiceName, clusterName, mfsTypeMaster)
 	if err != nil {
 		t.Errorf("Error creating service:", err)
 	}
 
 	// GetIp
-	ip, err := GetPublicIP4(creds, region, clusterName, *storeMaster.TaskList.TaskArns[0])
+	ip, err := GetPublicIP4(sess, region, clusterName, *storeMaster.TaskList.TaskArns[0])
 	if err != nil || ip == nil {
 		t.Errorf("Error GetIPv4()", err)
 	}
 
 	// cleanup
-	_, err = DeleteECSService(creds, region, chunkServiceName, clusterName, storeMaster)
+	_, err = DeleteECSService(sess, region, chunkServiceName, clusterName, storeMaster)
 	if err != nil {
 		t.Errorf("Error deleting service", err)
 	}
@@ -123,28 +144,37 @@ func TestGetPublicIP4(t *testing.T) {
 
 func TestCreateDeleteEc2Instance(t *testing.T) {
 
-	storeMaster, err := CreateECSService(creds, region, masterServiceName, clusterName, mfsTypeMaster)
+	// Create AWS Session
+	sess, err := CreateAWSSession(d)
+
+	storeMaster, err := CreateECSService(sess, d, masterServiceName, clusterName, mfsTypeMaster)
 	if err != nil {
 		t.Errorf("Error creating service:", err)
 	}
 
 	// GetIp
-	ip, err := GetPublicIP4(creds, region, clusterName, *storeMaster.TaskList.TaskArns[0])
+	ip, err := GetPublicIP4(sess, region, clusterName, *storeMaster.TaskList.TaskArns[0])
 	if err != nil || ip == nil {
 		t.Errorf("Error GetIPv4()", err)
 	}
 
-	_, err = CreateEc2Instance(region, clusterName, *ip, *ip+":9412", 100)
+	_, err = CreateEc2Instance(d, clusterName, *ip, *ip+":9412", 100, sess)
+	if err != nil {
+		t.Errorf("Error occured creating instance:", err)
+	}
+
+	// Idempotency
+	_, err = CreateEc2Instance(d, clusterName, *ip, *ip+":9412", 100, sess)
 	if err != nil {
 		t.Errorf("Error occured creating instance:", err)
 	}
 
 	// Delete
-	_, err = DeleteEc2Instance(*ip+":9412", region)
+	_, err = DeleteEc2Instance(*ip+":9412", region, sess)
 	if err != nil {
 		t.Errorf("Deleting Ec2 instance failed: ", err)
 	}
-	_, err = DeleteECSService(creds, region, masterServiceName, clusterName, storeMaster)
+	_, err = DeleteECSService(sess, region, masterServiceName, clusterName, storeMaster)
 	if err != nil {
 		t.Errorf("Deleting ECS service failed: ", err)
 	}
@@ -170,15 +200,8 @@ func TestDeleteECSCluster(t *testing.T) {
 }
 
 func TestRegisterDeregisterTaskDefinition(t *testing.T) {
-	sess, err := session.NewSession(
-		&aws.Config{
-			Region:      aws.String(region),
-			Credentials: credentials.NewStaticCredentials(creds.ID, creds.secret, creds.token),
-		})
-	if err != nil {
-		t.Errorf("Creating session failed: ", err)
-	}
-
+	// Create AWS Session
+	sess, err := CreateAWSSession(d)
 	svc := ecs.New(sess)
 	mfsType := MfsType{
 		name:    "moosefs-master",

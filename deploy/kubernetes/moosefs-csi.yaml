@@ -94,15 +94,21 @@ spec:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
         - name: moosefs-csi-plugin
-          image: quay.io/tuxera/moosefs-csi-plugin:0.0.1
+          image: quay.io/tuxera/moosefs-csi-plugin:dev-0.0.4-4
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
-            - "--url=$(MOOSEFS_URL)"
+            - "--aws-access=$(AWS_ACCESS_KEY_ID)"
+            - "--aws-secret=$(AWS_SECRET)"
+            - "--aws-session=$(AWS_SESSION_TOKEN)"
+            - "--aws-region=$(AWS_REGION)"
           env:
             - name: CSI_ENDPOINT
               value: unix:///var/lib/csi/sockets/pluginproxy/csi.sock
-            - name: MOOSEFS_URL
-              value: "35.228.134.224:9421"
+            - name: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+            - name: AWS_SESSION_TOKEN
+            - name: AWS_REGION
+              value: "eu-west-1"
           imagePullPolicy: "IfNotPresent"
           volumeMounts:
             - name: socket-dir
@@ -198,15 +204,21 @@ spec:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
         - name: moosefs-csi-plugin
-          image: quay.io/tuxera/moosefs-csi-plugin:0.0.1
+          image: quay.io/tuxera/moosefs-csi-plugin:dev-0.0.4-4
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
-            - "--url=$(MOOSEFS_URL)"
+            - "--aws-access=$(AWS_ACCESS_KEY_ID)"
+            - "--aws-secret=$(AWS_SECRET)"
+            - "--aws-session=$(AWS_SESSION_TOKEN)"
+            - "--aws-region=$(AWS_REGION)"
           env:
             - name: CSI_ENDPOINT
               value: unix:///var/lib/csi/sockets/pluginproxy/csi.sock
-            - name: MOOSEFS_URL
-              value: "35.228.134.224:9421"
+            - name: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET
+            - name: AWS_SESSION_TOKEN
+            - name: AWS_REGION
+              value: "eu-west-1"
           imagePullPolicy: "IfNotPresent"
           volumeMounts:
             - name: socket-dir
@@ -299,15 +311,21 @@ spec:
             capabilities:
               add: ["SYS_ADMIN"]
             allowPrivilegeEscalation: true
-          image: quay.io/tuxera/moosefs-csi-plugin:0.0.1
+          image: quay.io/tuxera/moosefs-csi-plugin:dev-0.0.4-4
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
-            - "--url=$(MOOSEFS_URL)"
+            - "--aws-access=$(AWS_ACCESS_KEY_ID)"
+            - "--aws-secret=$(AWS_SECRET)"
+            - "--aws-session=$(AWS_SESSION_TOKEN)"
+            - "--aws-region=$(AWS_REGION)"
           env:
             - name: CSI_ENDPOINT
               value: unix:///csi/csi.sock
-            - name: MOOSEFS_URL
-              value: "35.228.134.224:9421"
+            - name: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET
+            - name: AWS_SESSION_TOKEN
+            - name: AWS_REGION
+              value: "eu-west-1"
           imagePullPolicy: "IfNotPresent"
           volumeMounts:
             - name: plugin-dir

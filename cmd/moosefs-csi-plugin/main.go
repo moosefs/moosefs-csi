@@ -17,7 +17,7 @@ func main() {
 	)
 	flag.Parse()
 
-	drv, err := driver.NewDriver(*endpoint, awsAccessKeyID, awsSecret, awsSessionToken, awsRegion)
+	drv, err := driver.NewDriver(*endpoint, *awsAccessKeyID, *awsSecret, *awsSessionToken, *awsRegion)
 	if err != nil {
 		log.Fatalln(err)
 	}

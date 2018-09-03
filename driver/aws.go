@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -17,7 +19,7 @@ import (
 )
 
 var (
-	mfsTypeMaster = MfsType{name: "moosefs-master", version: "0.0.1"}
+	mfsTypeMaster = MfsType{name: "moosefs-master", version: "0.0.2"}
 )
 
 type AwsCreds struct {
@@ -40,75 +42,96 @@ type ECSStore struct {
 	TaskList      *ecs.ListTasksOutput
 }
 
+type AWSCreateVolOupput struct {
+	volID  string
+	Ec2Res *ec2.Reservation
+}
+
 // TODO(anoop): AWS/GCP/Azure credentials
 // TODO(anoop): Check for storage distribution (master, chunk etc.)
-func AWSCreateVol(volName, accessKeyID, secret, sessionToken, region string, volSize int64) (string, error) {
+func AWSCreateVol(volName string, d *Driver, volSizeInGB int64) (AWSCreateVolOupput, error) {
 
-	creds := AwsCreds{
-		ID:     accessKeyID,
-		secret: secret,
-		token:  sessionToken,
-	}
+	output := AWSCreateVolOupput{}
+
+	// Create AWS Session
+	sess, err := CreateAWSSession(d)
+
+	ll := d.log.WithFields(logrus.Fields{
+		"volumeName": volName,
+		"method":     "AWSCreateVol",
+		"region":     d.awsRegion,
+	})
 
 	// Create the fargate cluster for master
-	_, err := CreateECSCluster(creds, region, volName)
+	_, err = CreateECSCluster(sess, volName)
 	if err != nil {
-		return "", err
+		return output, err
 	}
+	ll.Info("create ECSCluster completed")
 
 	// Create the fargate master service
-	store, err := CreateECSService(creds, region, volName, volName, mfsTypeMaster)
+	store, err := CreateECSService(sess, d, volName, volName, mfsTypeMaster)
 	if err != nil {
-		return "", err
+		return output, err
 	}
+	ll.Info("create master ECSService completed")
 
 	// Get Master endpoint
-	ep, err := GetPublicIP4(creds, region, volName, *store.TaskList.TaskArns[0])
+	ep, err := GetPublicIP4(sess, d.awsRegion, volName, *store.TaskList.TaskArns[0])
 	if err != nil {
-		return "", err
+		return output, err
 	}
+	ll.Info("Obtained publicIP4")
 
 	volID := *ep + ":9421"
 	// Attach chunkserver volumes
-	_, err = CreateEc2Instance(region, *store.SecurityGroup.GroupName, *ep, volID, volSize)
+	createEc2Output, err := CreateEc2Instance(d, *store.SecurityGroup.GroupName, *ep, volID, volSizeInGB, sess)
+	if err != nil {
+		return output, err
+	}
+	ll.Info("create EC2 chunk servers completed")
+	output.volID = volID
+	output.Ec2Res = createEc2Output
 
-	return volID, nil // 35.228.134.224:9421
+	return output, nil // 35.228.134.224:9421
 
 }
 
 // AWSDeleteVol ...
-func AWSDeleteVol(volID, accessKeyID, secret, sessionToken, region string) error {
+func AWSDeleteVol(volID string, d *Driver) error {
 
-	creds := AwsCreds{
-		ID:     accessKeyID,
-		secret: secret,
-		token:  sessionToken,
-	}
+	// Create AWS Session
+	sess, err := CreateAWSSession(d)
 
-	_, err := DeleteEc2Instance(volID, region)
+	_, err = DeleteEc2Instance(volID, d.awsRegion, sess)
 	if err != nil {
 		return err
 	}
 
 	volName := volID // TODO(anoop): get volName from volID
-	_, err = DeleteECSService(creds, region, volName, volName, ECSStore{})
+	_, err = DeleteECSService(sess, d.awsRegion, volName, volName, ECSStore{})
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-// CreateECSCluster ...
-func CreateECSCluster(creds AwsCreds, region, name string) (*ecs.CreateClusterOutput, error) {
-
+// CreateAWSSession ...
+func CreateAWSSession(d *Driver) (*session.Session, error) {
 	sess, err := session.NewSession(
-		&aws.Config{Region: aws.String(region),
-			Credentials: credentials.NewStaticCredentials(creds.ID, creds.secret, creds.token),
+		&aws.Config{Region: aws.String(d.awsRegion),
+			Credentials: credentials.NewStaticCredentials(d.awsAccessKey, d.awsSecret, d.awsSessionToken),
 		})
 
 	if err != nil {
 		return nil, err
 	}
+	return sess, nil
+
+}
+
+// CreateECSCluster ...
+func CreateECSCluster(sess *session.Session, name string) (*ecs.CreateClusterOutput, error) {
 
 	svc := ecs.New(sess)
 	input := &ecs.CreateClusterInput{
@@ -146,16 +169,14 @@ func DeleteECSCluster(creds AwsCreds, region, name string) (*ecs.DeleteClusterOu
 }
 
 // CreateECSService ...
-func CreateECSService(creds AwsCreds, region, name, clusterName string, mfsType MfsType) (ECSStore, error) {
+func CreateECSService(sess *session.Session, d *Driver, name, clusterName string, mfsType MfsType) (ECSStore, error) {
 	store := ECSStore{}
-	sess, err := session.NewSession(
-		&aws.Config{
-			Region:      aws.String(region),
-			Credentials: credentials.NewStaticCredentials(creds.ID, creds.secret, creds.token),
-		})
-	if err != nil {
-		return store, err
-	}
+	ll := d.log.WithFields(logrus.Fields{
+		"method":         "CreateECSService",
+		"serviceName":    name,
+		"clusterName":    clusterName,
+		"taskDefinition": mfsType.name,
+	})
 
 	// Register task definition
 	svc := ecs.New(sess)
@@ -164,13 +185,15 @@ func CreateECSService(creds AwsCreds, region, name, clusterName string, mfsType 
 		return store, err
 	}
 	store.Task = output
+	ll.Info("Task definition registered")
 
 	// Create securityGroup
-	sgs, err := createSecurityGroup(clusterName, "Created for moosefs-csi-fargate", region)
+	sgs, err := createSecurityGroup(clusterName, "Created for moosefs-csi-fargate", d.awsRegion, sess)
 	if err != nil {
 		return store, err
 	}
 	store.SecurityGroup = sgs[0]
+	ll.Info("SecurityGroup set")
 
 	//Check and Create the service
 	svcInput := &ecs.DescribeServicesInput{
@@ -181,7 +204,8 @@ func CreateECSService(creds AwsCreds, region, name, clusterName string, mfsType 
 	if err != nil {
 		return store, err
 	}
-	// Service does not exist
+	ll.Info("DescribeServices completed")
+	// Check if Service exists
 	if len(svcOutput.Services) == 0 || (svcOutput.Services[0] != nil && *svcOutput.Services[0].Status != "ACTIVE") {
 
 		gid := *sgs[0].GroupId
@@ -204,12 +228,14 @@ func CreateECSService(creds AwsCreds, region, name, clusterName string, mfsType 
 			return store, err
 		}
 		store.Service = result
+		ll.Info("Service created")
 	}
 
 	// Wait for task running // TODO(anoop): This is not enough, sometimes 'Association empty for NetworkInterface:'
 	if err := waitUntilTaskArn(clusterName, svc, 60); err != nil {
 		return store, err
 	}
+	ll.Info("TaskArns obtained")
 
 	// List tasks for Arns
 	listTaskInput := &ecs.ListTasksInput{
@@ -217,25 +243,19 @@ func CreateECSService(creds AwsCreds, region, name, clusterName string, mfsType 
 	}
 	listTaskOutput, err := svc.ListTasks(listTaskInput)
 	store.TaskList = listTaskOutput
+	ll.Info("TaskList obtained")
 
 	if err = waitUntilTaskActive(clusterName, *listTaskOutput.TaskArns[0], svc, 60); err != nil {
 		return store, err
 	}
+	ll.Info("Task running")
 
 	return store, nil
 }
 
 // DeleteECSService ...
 // TODO(anoop): Handle SG
-func DeleteECSService(creds AwsCreds, region, name, clusterName string, store ECSStore) (*ecs.DeleteServiceOutput, error) {
-	sess, err := session.NewSession(
-		&aws.Config{
-			Region:      aws.String(region),
-			Credentials: credentials.NewStaticCredentials(creds.ID, creds.secret, creds.token),
-		})
-	if err != nil {
-		return nil, err
-	}
+func DeleteECSService(sess *session.Session, region, name, clusterName string, store ECSStore) (*ecs.DeleteServiceOutput, error) {
 	svc := ecs.New(sess)
 
 	// TODO:(anoop) Stop services before deleting
@@ -269,7 +289,7 @@ func DeleteECSService(creds AwsCreds, region, name, clusterName string, store EC
 // CreateEc2Instance ...
 // TODO(anoop): not idempotent
 // TODO(anoop): Wait for the chunkService
-func CreateEc2Instance(region, sg, masterIP, volID string, volSize int64) (*ec2.Reservation, error) {
+func CreateEc2Instance(d *Driver, sg, masterIP, volID string, volSizeInGB int64, sess *session.Session) (*ec2.Reservation, error) {
 	devName := "/dev/xvdh"
 	userData := func(volSize, masterIP string) string {
 		return `
@@ -294,18 +314,34 @@ echo 'MASTER_HOST = ` + masterIP + `' > /etc/mfs/mfschunkserver.cfg
 `
 	}
 	imageName := "amzn-ami-hvm-2018.03.0.20180412-x86_64-ebs" // ensure its in all regions
+	ll := d.log.WithFields(logrus.Fields{
+		"method":   "CreateEc2Instance",
+		"endpoint": masterIP,
+		"volID":    volID,
+	})
 
-	// create svc
-	sess, err := session.NewSession(&aws.Config{
-		Region: aws.String(region)},
-	)
-	if err != nil {
-		return nil, err
-	}
 	// Create an EC2 service client.
 	svc := ec2.New(sess)
 
+	// Check if already instance exists
+	descInstanceInput := &ec2.DescribeInstancesInput{
+		Filters: []*ec2.Filter{
+			{
+				Name: aws.String("tag:volID"),
+				Values: []*string{
+					aws.String(volID),
+				},
+			},
+		},
+	}
+	descInstanceOutput, err := svc.DescribeInstances(descInstanceInput)
+	if len(descInstanceOutput.Reservations) > 0 {
+		ll.Info("Instance already exists, skipping creation")
+		return descInstanceOutput.Reservations[0], nil
+	}
+
 	// Obtain the imageID
+	ll.Info("finding optimal Ec2 images")
 	descInput := &ec2.DescribeImagesInput{
 		Filters: []*ec2.Filter{
 			&ec2.Filter{
@@ -324,7 +360,7 @@ echo 'MASTER_HOST = ` + masterIP + `' > /etc/mfs/mfschunkserver.cfg
 		return nil, errors.New("Unable to fetch ImageID for ImageName: " + imageName)
 	}
 	imageID := descOutput.Images[0].ImageId
-	userDataStr := userData(strconv.FormatInt(volSize, 10), masterIP)
+	userDataStr := userData(strconv.FormatInt(volSizeInGB, 10), masterIP)
 	userDataEncoded := base64.URLEncoding.EncodeToString([]byte(userDataStr))
 
 	riInput := &ec2.RunInstancesInput{
@@ -350,35 +386,26 @@ echo 'MASTER_HOST = ` + masterIP + `' > /etc/mfs/mfschunkserver.cfg
 			{
 				DeviceName: aws.String("/dev/xvdh"),
 				Ebs: &ec2.EbsBlockDevice{
-					VolumeSize: aws.Int64(volSize),
+					VolumeSize: aws.Int64(volSizeInGB),
 					//					DeleteOnTermination: aws.Bool(true),
 				},
 			},
 		},
 	}
+	ll.Info("Creating Ec2instance")
 	riOutput, err := svc.RunInstances(riInput)
 	if err != nil {
 		return nil, err
 	}
-
-	// Wait for instances to be up
-	if err = waitUntilInstanceRunning(*riOutput.Instances[0].InstanceId, svc, 60); err != nil {
-		return nil, err
-	}
+	ll.Info("Ec2instance created")
 
 	return riOutput, nil
 
 }
 
-func DeleteEc2Instance(volID string, region string) (*ec2.TerminateInstancesOutput, error) {
+// DeleteEc2Instance ...
+func DeleteEc2Instance(volID, region string, sess *session.Session) (*ec2.TerminateInstancesOutput, error) {
 
-	// create svc
-	sess, err := session.NewSession(&aws.Config{
-		Region: aws.String(region)},
-	)
-	if err != nil {
-		return nil, err
-	}
 	// Create an EC2 service client.
 	svc := ec2.New(sess)
 
@@ -451,14 +478,7 @@ func deregisterTaskDefinition(svc *ecs.ECS, taskName, revision string) (*ecs.Der
 	return result, nil
 }
 
-func createSecurityGroup(name, desc, region string) ([]*ec2.SecurityGroup, error) {
-	// create svc
-	sess, err := session.NewSession(&aws.Config{
-		Region: aws.String(region)},
-	)
-	if err != nil {
-		return nil, err
-	}
+func createSecurityGroup(name, desc, region string, sess *session.Session) ([]*ec2.SecurityGroup, error) {
 	// Create an EC2 service client.
 	svc := ec2.New(sess)
 
@@ -568,16 +588,7 @@ func createSubnets(name string) []string {
 }
 
 // GetPublicIP4 ...
-func GetPublicIP4(creds AwsCreds, region, clusterName, taskArn string) (*string, error) {
-
-	sess, err := session.NewSession(
-		&aws.Config{
-			Region:      aws.String(region),
-			Credentials: credentials.NewStaticCredentials(creds.ID, creds.secret, creds.token),
-		})
-	if err != nil {
-		return nil, err
-	}
+func GetPublicIP4(sess *session.Session, region, clusterName, taskArn string) (*string, error) {
 
 	svc := ecs.New(sess)
 
@@ -655,7 +666,7 @@ func waitUntilTaskArn(clusterName string, svc *ecs.ECS, waitSecs time.Duration) 
 	}
 
 	timeOutChan := make(chan bool)
-	tickChan := time.NewTicker(time.Second * 5).C // DescribeTasks every 5 seconds
+	tickChan := time.NewTicker(time.Second * 2).C // DescribeTasks every 5 seconds
 
 	go func() {
 		time.Sleep(time.Second * waitSecs)
@@ -688,7 +699,7 @@ func waitUntilTaskActive(clusterName, taskArn string, svc *ecs.ECS, waitSecs tim
 		},
 	}
 	timeOutChan := make(chan bool)
-	tickChan := time.NewTicker(time.Second * 5).C // DescribeTasks every 5 seconds
+	tickChan := time.NewTicker(time.Second * 2).C // DescribeTasks every 5 seconds
 
 	go func() {
 		time.Sleep(time.Second * waitSecs)
@@ -721,7 +732,7 @@ func waitUntilInstanceRunning(instanceID string, svc *ec2.EC2, waitSecs time.Dur
 	}
 
 	timeOutChan := make(chan bool)
-	tickChan := time.NewTicker(time.Second * 5).C // DescribeTasks every 5 seconds
+	tickChan := time.NewTicker(time.Second * 2).C // DescribeTasks every 5 seconds
 
 	go func() {
 		time.Sleep(time.Second * waitSecs)
@@ -768,7 +779,7 @@ func extractStorage(capRange *csi.CapacityRange) (int64, error) {
 	}
 
 	if minSize == maxSize {
-		return minSize, nil
+		return minSize / GB, nil
 	}
 
 	return 0, errors.New("requiredBytes and LimitBytes are not the same")
