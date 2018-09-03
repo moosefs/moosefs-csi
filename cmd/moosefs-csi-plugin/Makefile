@@ -3,7 +3,7 @@ NAME=moosefs-csi-plugin
 
 all: publish
 
-publish: compile build push clean
+publish: clean compile build push
 
 compile:
 	@echo "==> Building the project"
@@ -15,7 +15,7 @@ build:
 	@docker build -t quay.io/tuxera/moosefs-csi-plugin:latest .
 
 push:
-	@echo "==> Publishing tuxera/do-csi-plugin:$(VERSION)"
+	@echo "==> Publishing tuxera/moosefs-csi-plugin:$(VERSION)"
 	@docker push quay.io/tuxera/moosefs-csi-plugin:$(VERSION)
 	@docker push quay.io/tuxera/moosefs-csi-plugin:latest
 	@echo "==> Your image is now available at quay.io/tuxera/moosefs-csi-plugin:$(VERSION)/latest"
