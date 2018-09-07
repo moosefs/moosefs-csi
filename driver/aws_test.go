@@ -19,8 +19,9 @@ var (
 	chunkServiceName  = "moosefs-chunk_service"
 	moosefsSg         = "moosefs-test-sg"
 	creds             = AwsCreds{
-		ID:     "ASIAVQDDCCHDTRB7J37J",
-		token:  "FQoGZXIvYXdzEBoaDM6VlVVMo6nO7l+gfCKsASkZhiBR43LtOTdsqxDPvnChqzO59N44nk7NTMi/cU4zFa2rZQ3HhICZhr/ppEw8Z5yIFZcdaHpU5EMgOhsNZArCtPmILtm7WNRSZUxzZEN5IbmulhC9HdHezyO8fzDM5nfMnqiq2U2bg0onWQYHu3nF4jZH2Edgz6E3kbNcyJyCHcZ7UuaJoAXppIB/hOprW1Y19kEBXh62o5gQe7ncsgHzNUol28vAIo1ujDQok7iu3AU=",
+		ID:     "ASIAVQDDCCHDWCKLE6BA",
+		secret: "X0TsvLIzSeW/FBnvgOYzBZrYZPeE1grOlxNf6UzR",
+		token:  "FQoGZXIvYXdzEJL//////////wEaDAhyb+l9nHz5le9nOyKsAcb2cUc8msdTiH7vQDgWaTbj5tHFYRn2eZf1Zf92HOAW/FWC4XF6PE/iYyZaAWOlwcIaum5v/WbS7iyUnUyjhKeRjvorMlqJebMNXf/OHTveAyrLwRNjb+ivRtGBGipqUMUqXpFHr3yIDAfJlakFlMpimaD1OlqiX1ESnA42RhnCFXnIEYXJCDShRqiCXiZkgYX9dZ7Xe142nQwsvDRe06RBqKAaC/oYr5WF3SMok/bI3AU=",
 	}
 	d = &Driver{
 		log: logrus.New().WithFields(logrus.Fields{
@@ -170,10 +171,11 @@ func TestCreateDeleteEc2Instance(t *testing.T) {
 	}
 
 	// Delete
-	_, err = DeleteEc2Instance(*ip+":9412", region, sess)
+	_, err = DeleteEc2Instance(*ip+":9412", d, sess)
 	if err != nil {
 		t.Errorf("Deleting Ec2 instance failed: ", err)
 	}
+
 	_, err = DeleteECSService(sess, region, masterServiceName, clusterName, storeMaster)
 	if err != nil {
 		t.Errorf("Deleting ECS service failed: ", err)
@@ -227,6 +229,14 @@ func TestRegisterDeregisterTaskDefinition(t *testing.T) {
 	}
 	if "INACTIVE" != *result1.TaskDefinition.Status {
 		t.Errorf("Task definition registration status: ", "INACTIVE", *result1.TaskDefinition.Status)
+	}
+}
+
+func TestEncodedUserData(t *testing.T) {
+	userDataEncoded := encodedUserData(100, "/dev/xvhd", "0.0.0.0")
+	actuals := "CmN1cmwgaHR0cHM6Ly9naXN0LmdpdGh1YnVzZXJjb250ZW50LmNvbS9tYW5pYW5rYXJhL2Q0Y2Q2ZWEzNjQ5NmFmNmU1N2IzMzMzYzFlODgyODI4L3Jhdy9mZGYwN2MwOWYyNWNkM2JmMTZjNTY3MTZkOTVhZTVlZWM0ODUzZWIzL3Byb3Zpc2lvbi1tb29zZWZzLnNoPmluaXQuc2gKY2htb2QgYSt4IGluaXQuc2gKLi9pbml0LnNoIDAuMC4wLjAgMTAwIC9kZXYveHZoZAoJCQ=="
+	if userDataEncoded != actuals {
+		t.Errorf("Wrong userData encoding for: ", userDataEncoded, actuals)
 	}
 }
 

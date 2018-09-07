@@ -103,7 +103,7 @@ func AWSDeleteVol(volID string, d *Driver) error {
 	// Create AWS Session
 	sess, err := CreateAWSSession(d)
 
-	_, err = DeleteEc2Instance(volID, d.awsRegion, sess)
+	_, err = DeleteEc2Instance(volID, d, sess)
 	if err != nil {
 		return err
 	}
@@ -260,11 +260,13 @@ func DeleteECSService(sess *session.Session, region, name, clusterName string, s
 
 	// TODO:(anoop) Stop services before deleting
 
+	// TODO(anoop): Figure-out a way to derive store to deRegisterTaskDefinition()
+
 	// De-Register task definition
-	taskRev := strconv.FormatInt(*store.Task.TaskDefinition.Revision, 10)
-	if _, err := deregisterTaskDefinition(svc, *store.Task.TaskDefinition.Family, taskRev); err != nil {
-		return nil, err
-	}
+	// taskRev := strconv.FormatInt(*store.Task.TaskDefinition.Revision, 10)
+	// if _, err := deregisterTaskDefinition(svc, *store.Task.TaskDefinition.Family, taskRev); err != nil {
+	// 	return nil, err
+	// }
 
 	// Delete the service
 	input := &ecs.DeleteServiceInput{
@@ -291,28 +293,6 @@ func DeleteECSService(sess *session.Session, region, name, clusterName string, s
 // TODO(anoop): Wait for the chunkService
 func CreateEc2Instance(d *Driver, sg, masterIP, volID string, volSizeInGB int64, sess *session.Session) (*ec2.Reservation, error) {
 	devName := "/dev/xvdh"
-	userData := func(volSize, masterIP string) string {
-		return `
-#!/bin/bash
-# Install fuse and others
-yum install -y curl gnupg2 fuse libfuse2 ca-certificates e2fsprogs
-# Install certificates and Repository
-curl "https://ppa.moosefs.com/RPM-GPG-KEY-MooseFS" > /etc/pki/rpm-gpg/RPM-GPG-KEY-MooseFS
-curl "http://ppa.moosefs.com/MooseFS-3-el7.repo" > /etc/yum.repos.d/MooseFS.repo
-# Install chunkserver
-yum install -y moosefs-chunkserver xfsprogs
-# Provision and mount volume
-mkfs -t xfs ` + devName + `
-mkdir -p /mnt/xvdh
-mount ` + devName + ` /mnt/xvdh
-# Configure moosefs chunk server
-chown -R mfs:mfs /mnt/xvdh && echo '/mnt/xvdh ` + volSize + `GiB' > /etc/mfs/mfshdd.cfg
-# Add master
-echo 'MASTER_HOST = ` + masterIP + `' > /etc/mfs/mfschunkserver.cfg
-# Start the chunkserver service
-/usr/sbin/mfschunkserver start
-`
-	}
 	imageName := "amzn-ami-hvm-2018.03.0.20180412-x86_64-ebs" // ensure its in all regions
 	ll := d.log.WithFields(logrus.Fields{
 		"method":   "CreateEc2Instance",
@@ -360,8 +340,7 @@ echo 'MASTER_HOST = ` + masterIP + `' > /etc/mfs/mfschunkserver.cfg
 		return nil, errors.New("Unable to fetch ImageID for ImageName: " + imageName)
 	}
 	imageID := descOutput.Images[0].ImageId
-	userDataStr := userData(strconv.FormatInt(volSizeInGB, 10), masterIP)
-	userDataEncoded := base64.URLEncoding.EncodeToString([]byte(userDataStr))
+	userDataEncoded := encodedUserData(volSizeInGB, devName, masterIP)
 
 	riInput := &ec2.RunInstancesInput{
 		KeyName:          aws.String("anoop_ireland"), // TODO(anoop): To be removed
@@ -404,10 +383,16 @@ echo 'MASTER_HOST = ` + masterIP + `' > /etc/mfs/mfschunkserver.cfg
 }
 
 // DeleteEc2Instance ...
-func DeleteEc2Instance(volID, region string, sess *session.Session) (*ec2.TerminateInstancesOutput, error) {
+func DeleteEc2Instance(volID string, d *Driver, sess *session.Session) (*ec2.TerminateInstancesOutput, error) {
 
 	// Create an EC2 service client.
 	svc := ec2.New(sess)
+
+	ll := d.log.WithFields(logrus.Fields{
+		"method": "delete_ec2_instance",
+		"volID":  volID,
+	})
+	ll.Info("delete ec2 instance called")
 
 	descInput := &ec2.DescribeInstancesInput{
 		Filters: []*ec2.Filter{
@@ -423,6 +408,10 @@ func DeleteEc2Instance(volID, region string, sess *session.Session) (*ec2.Termin
 	if err != nil {
 		return nil, err
 	}
+	ll.Info("describe ec2 instance successful")
+
+	// TODO(anoop): remove
+	ll.Info("reservations: ", descOutput.Reservations)
 
 	var terminateOutput *ec2.TerminateInstancesOutput
 	if len(descOutput.Reservations) > 0 && len(descOutput.Reservations[0].Instances) > 0 {
@@ -783,6 +772,20 @@ func extractStorage(capRange *csi.CapacityRange) (int64, error) {
 	}
 
 	return 0, errors.New("requiredBytes and LimitBytes are not the same")
+}
+
+// Returns a base64 encoded userData init script
+func encodedUserData(volSize int64, devName, masterIP string) string {
+	userData := func(volSize, devName, masterIP string) string {
+		return `
+#!/bin/bash
+curl https://gist.githubusercontent.com/maniankara/d4cd6ea36496af6e57b3333c1e882828/raw/fdf07c09f25cd3bf16c56716d95ae5eec4853eb3/provision-moosefs.sh>init.sh
+chmod a+x init.sh
+./init.sh ` + masterIP + ` ` + volSize + ` ` + devName + `
+		`
+	}
+	userDataStr := userData(strconv.FormatInt(volSize, 10), devName, masterIP)
+	return base64.URLEncoding.EncodeToString([]byte(userDataStr))
 }
 
 /*
