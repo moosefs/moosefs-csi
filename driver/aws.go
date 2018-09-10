@@ -83,7 +83,7 @@ func AWSCreateVol(volName string, d *Driver, volSizeInGB int64) (AWSCreateVolOup
 	}
 	ll.Info("Obtained publicIP4")
 
-	volID := *ep + ":9421"
+	volID := *ep + ":"
 	// Attach chunkserver volumes
 	createEc2Output, err := CreateEc2Instance(d, *store.SecurityGroup.GroupName, *ep, volID, volSizeInGB, sess)
 	if err != nil {
@@ -93,7 +93,7 @@ func AWSCreateVol(volName string, d *Driver, volSizeInGB int64) (AWSCreateVolOup
 	output.volID = volID
 	output.Ec2Res = createEc2Output
 
-	return output, nil // 35.228.134.224:9421
+	return output, nil // 35.228.134.224:
 
 }
 
@@ -256,7 +256,7 @@ func CreateECSService(sess *session.Session, d *Driver, name, clusterName string
 // DeleteECSService ...
 // TODO(anoop): Handle SG
 func DeleteECSService(sess *session.Session, region, name, clusterName string, store ECSStore) (*ecs.DeleteServiceOutput, error) {
-	svc := ecs.New(sess)
+	// svc := ecs.New(sess)
 
 	// TODO:(anoop) Stop services before deleting
 
@@ -269,23 +269,24 @@ func DeleteECSService(sess *session.Session, region, name, clusterName string, s
 	// }
 
 	// Delete the service
-	input := &ecs.DeleteServiceInput{
-		Cluster: aws.String(clusterName),
-		Service: aws.String(name),
-		Force:   aws.Bool(true),
-	}
-	result, err := svc.DeleteService(input)
-	if err != nil {
-		return nil, err
-	}
-
+	/*
+		input := &ecs.DeleteServiceInput{
+			Cluster: aws.String(clusterName),
+			Service: aws.String(name),
+			Force:   aws.Bool(true),
+		}
+		result, err := svc.DeleteService(input)
+		if err != nil {
+			return nil, err
+		}
+	*/
 	// Delete security group
 	/* TODO(anoop): Needs waiting for Ec2 instance shutdown
 	if err := deleteSecurityGroup(*store.SecurityGroup.GroupId, region); err != nil {
 		return nil, err
 	}
 	*/
-	return result, nil
+	return &ecs.DeleteServiceOutput{}, nil
 }
 
 // CreateEc2Instance ...
@@ -410,9 +411,6 @@ func DeleteEc2Instance(volID string, d *Driver, sess *session.Session) (*ec2.Ter
 	}
 	ll.Info("describe ec2 instance successful")
 
-	// TODO(anoop): remove
-	ll.Info("reservations: ", descOutput.Reservations)
-
 	var terminateOutput *ec2.TerminateInstancesOutput
 	if len(descOutput.Reservations) > 0 && len(descOutput.Reservations[0].Instances) > 0 {
 		terminateInput := &ec2.TerminateInstancesInput{
@@ -427,7 +425,7 @@ func DeleteEc2Instance(volID string, d *Driver, sess *session.Session) (*ec2.Ter
 	} else {
 		return nil, errors.New("DescribeInstances didnt return Reservations or Instances")
 	}
-
+	ll.Info("Deleting ec2 instance successful")
 	return terminateOutput, nil
 }
 

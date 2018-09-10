@@ -19,9 +19,6 @@ var (
 	chunkServiceName  = "moosefs-chunk_service"
 	moosefsSg         = "moosefs-test-sg"
 	creds             = AwsCreds{
-		ID:     "ASIAVQDDCCHDWCKLE6BA",
-		secret: "X0TsvLIzSeW/FBnvgOYzBZrYZPeE1grOlxNf6UzR",
-		token:  "FQoGZXIvYXdzEJL//////////wEaDAhyb+l9nHz5le9nOyKsAcb2cUc8msdTiH7vQDgWaTbj5tHFYRn2eZf1Zf92HOAW/FWC4XF6PE/iYyZaAWOlwcIaum5v/WbS7iyUnUyjhKeRjvorMlqJebMNXf/OHTveAyrLwRNjb+ivRtGBGipqUMUqXpFHr3yIDAfJlakFlMpimaD1OlqiX1ESnA42RhnCFXnIEYXJCDShRqiCXiZkgYX9dZ7Xe142nQwsvDRe06RBqKAaC/oYr5WF3SMok/bI3AU=",
 	}
 	d = &Driver{
 		log: logrus.New().WithFields(logrus.Fields{
