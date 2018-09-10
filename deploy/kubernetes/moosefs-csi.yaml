@@ -94,7 +94,7 @@ spec:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
         - name: moosefs-csi-plugin
-          image: quay.io/tuxera/moosefs-csi-plugin:dev-0.0.4-4
+          image: quay.io/tuxera/moosefs-csi-plugin:dev-0.0.4-9
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
             - "--aws-access=$(AWS_ACCESS_KEY_ID)"
@@ -105,7 +105,7 @@ spec:
             - name: CSI_ENDPOINT
               value: unix:///var/lib/csi/sockets/pluginproxy/csi.sock
             - name: AWS_ACCESS_KEY_ID
-            - name: AWS_SECRET_ACCESS_KEY
+            - name: AWS_SECRET
             - name: AWS_SESSION_TOKEN
             - name: AWS_REGION
               value: "eu-west-1"
@@ -204,7 +204,7 @@ spec:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
         - name: moosefs-csi-plugin
-          image: quay.io/tuxera/moosefs-csi-plugin:dev-0.0.4-4
+          image: quay.io/tuxera/moosefs-csi-plugin:dev-0.0.4-9
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
             - "--aws-access=$(AWS_ACCESS_KEY_ID)"
@@ -311,7 +311,7 @@ spec:
             capabilities:
               add: ["SYS_ADMIN"]
             allowPrivilegeEscalation: true
-          image: quay.io/tuxera/moosefs-csi-plugin:dev-0.0.4-4
+          image: quay.io/tuxera/moosefs-csi-plugin:dev-0.0.4-9
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
             - "--aws-access=$(AWS_ACCESS_KEY_ID)"
