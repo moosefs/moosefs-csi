@@ -48,6 +48,7 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 		"volume_id":           req.VolumeId,
 		"staging_target_path": req.StagingTargetPath,
 		"source":              source,
+		"target":              target,
 		"fsType":              fsType,
 		"mount_options":       options,
 		"method":              "node_stage_volume",
@@ -61,7 +62,7 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 	}
 
 	if !mounted {
-		if err := d.mounter.Mount(source, target); err != nil {
+		if err := d.mounter.Mount(source, target, fsType, options...); err != nil {
 			return nil, status.Error(codes.Internal, err.Error())
 		}
 	} else {
@@ -164,7 +165,7 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 
 	if !mounted {
 		ll.Info("mounting the volume")
-		if err := d.mounter.Mount(source, target); err != nil {
+		if err := d.mounter.Mount(source, target, fsType, options...); err != nil {
 			return nil, status.Error(codes.Internal, err.Error())
 		}
 	} else {

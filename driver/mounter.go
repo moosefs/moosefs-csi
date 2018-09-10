@@ -20,7 +20,7 @@ import (
 
 type Mounter interface {
 	// Mount a volume
-	Mount(sourcePath string, destPath string) error
+	Mount(sourcePath string, destPath, mountType string, opts ...string) error
 
 	// Unmount a volume
 	UMount(destPath string) error
@@ -49,7 +49,7 @@ type fileSystem struct {
  *
  */
 
-func (m *mounter) Mount(sourcePath, destPath string) error {
+func (m *mounter) Mount(sourcePath, destPath, mountType string, opts ...string) error {
 	mountCmd := "mount"
 	mountArgs := []string{}
 
@@ -61,7 +61,10 @@ func (m *mounter) Mount(sourcePath, destPath string) error {
 		return errors.New("Destination path is not specified for mounting the volume")
 	}
 
-	mountArgs = append(mountArgs, "-t", "moosefs")
+	mountArgs = append(mountArgs, "-t", mountType)
+	if len(opts) > 0 {
+		mountArgs = append(mountArgs, "-o", strings.Join(opts, ","))
+	}
 
 	mountArgs = append(mountArgs, sourcePath)
 	mountArgs = append(mountArgs, destPath)

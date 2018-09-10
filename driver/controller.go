@@ -143,9 +143,8 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 	})
 	ll.Info("controller unpublish volume called")
 
-	// TODO(Anoop): pre-provisioned volumes for now
-	// Ideally: start moosefs docker on Azure, GCP, AWS with IP ep and
-	// provision and mount the needed disk to that container
+	// TODO(Anoop): check what needs to be done more
+	// Moosefs being ditributed filesystem, nothing needed to be done
 	// detachVol()
 
 	ll.Info("volume is detached")
