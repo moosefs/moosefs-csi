@@ -94,9 +94,10 @@ spec:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
         - name: moosefs-csi-plugin
-          image: quay.io/tuxera/moosefs-csi-plugin:dev-0.0.4-9
+          image: quay.io/tuxera/moosefs-csi-plugin:dev-0.0.4-11
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
+            - "--topology=$(MFS_TOPOLOGY)"
             - "--aws-access=$(AWS_ACCESS_KEY_ID)"
             - "--aws-secret=$(AWS_SECRET)"
             - "--aws-session=$(AWS_SESSION_TOKEN)"
@@ -104,9 +105,14 @@ spec:
           env:
             - name: CSI_ENDPOINT
               value: unix:///var/lib/csi/sockets/pluginproxy/csi.sock
+            - name: MFS_TOPOLOGY
+              value: "master:AWS,chunk:AWS"
             - name: AWS_ACCESS_KEY_ID
+              value: "AWS_ACCESS_KEY_ID"
             - name: AWS_SECRET
+              value: "AWS_SECRET"
             - name: AWS_SESSION_TOKEN
+              value: "AWS_SESSION_TOKEN"
             - name: AWS_REGION
               value: "eu-west-1"
           imagePullPolicy: "IfNotPresent"
@@ -204,9 +210,10 @@ spec:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
         - name: moosefs-csi-plugin
-          image: quay.io/tuxera/moosefs-csi-plugin:dev-0.0.4-9
+          image: quay.io/tuxera/moosefs-csi-plugin:dev-0.0.4-11
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
+            - "--topology=$(MFS_TOPOLOGY)"
             - "--aws-access=$(AWS_ACCESS_KEY_ID)"
             - "--aws-secret=$(AWS_SECRET)"
             - "--aws-session=$(AWS_SESSION_TOKEN)"
@@ -214,9 +221,14 @@ spec:
           env:
             - name: CSI_ENDPOINT
               value: unix:///var/lib/csi/sockets/pluginproxy/csi.sock
+            - name: MFS_TOPOLOGY
+              value: "master:AWS,chunk:AWS"
             - name: AWS_ACCESS_KEY_ID
+              value: "AWS_ACCESS_KEY_ID"
             - name: AWS_SECRET
+              value: "AWS_SECRET"
             - name: AWS_SESSION_TOKEN
+              value: "AWS_SESSION_TOKEN"
             - name: AWS_REGION
               value: "eu-west-1"
           imagePullPolicy: "IfNotPresent"
@@ -311,9 +323,10 @@ spec:
             capabilities:
               add: ["SYS_ADMIN"]
             allowPrivilegeEscalation: true
-          image: quay.io/tuxera/moosefs-csi-plugin:dev-0.0.4-9
+          image: quay.io/tuxera/moosefs-csi-plugin:dev-0.0.4-11
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
+            - "--topology=$(MFS_TOPOLOGY)"
             - "--aws-access=$(AWS_ACCESS_KEY_ID)"
             - "--aws-secret=$(AWS_SECRET)"
             - "--aws-session=$(AWS_SESSION_TOKEN)"
@@ -321,9 +334,14 @@ spec:
           env:
             - name: CSI_ENDPOINT
               value: unix:///csi/csi.sock
+            - name: MFS_TOPOLOGY
+              value: "master:AWS,chunk:AWS"
             - name: AWS_ACCESS_KEY_ID
+              value: "AWS_ACCESS_KEY_ID"
             - name: AWS_SECRET
+              value: "AWS_SECRET"
             - name: AWS_SESSION_TOKEN
+              value: "AWS_SESSION_TOKEN"
             - name: AWS_REGION
               value: "eu-west-1"
           imagePullPolicy: "IfNotPresent"
@@ -338,11 +356,6 @@ spec:
             - mountPath: /dev
               name: device-dir
       volumes:
-        # TODO(arslan): the registar is not implemented yet
-        #- name: registrar-socket-dir
-        #  hostPath:
-        #    path: /var/lib/kubelet/device-plugins/
-        #    type: DirectoryOrCreate
         - name: plugin-dir
           hostPath:
             path: /var/lib/kubelet/plugins/com.tuxera.csi.moosefs

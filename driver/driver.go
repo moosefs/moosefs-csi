@@ -42,6 +42,7 @@ const (
 //
 type Driver struct {
 	endpoint        string
+	topology        string
 	nodeID          string
 	awsAccessKey    string
 	awsSecret       string
@@ -56,11 +57,12 @@ type Driver struct {
 // NewDriver returns a CSI plugin that contains the necessary gRPC
 // interfaces to interact with Kubernetes over unix domain sockets for
 // managaing Moosefs Storage
-func NewDriver(ep, awsAccessKeyID, awsSecret, awsSessionToken, awsRegion string) (*Driver, error) {
+func NewDriver(ep, topo, awsAccessKeyID, awsSecret, awsSessionToken, awsRegion string) (*Driver, error) {
 	nodeID := ep // TODO(Anoop): get hostname from EP
 
 	return &Driver{
 		endpoint:        ep,
+		topology:        topo,
 		nodeID:          nodeID,
 		awsAccessKey:    awsAccessKeyID,
 		awsSecret:       awsSecret,

@@ -26,6 +26,7 @@ import (
 func main() {
 	var (
 		endpoint        = flag.String("endpoint", "unix:///var/lib/kubelet/plugins/com.tuxera.csi.moosefs/csi.sock", "CSI endpoint")
+		topo            = flag.String("topology", "master:AWS,chunk:AWS", "MooseFS cluster topology")
 		awsAccessKeyID  = flag.String("aws-access", "", "AWS Access key Id")
 		awsSessionToken = flag.String("aws-session", "", "AWS Session token")
 		awsSecret       = flag.String("aws-secret", "", "AWS Secret Access key")
@@ -33,7 +34,7 @@ func main() {
 	)
 	flag.Parse()
 
-	drv, err := driver.NewDriver(*endpoint, *awsAccessKeyID, *awsSecret, *awsSessionToken, *awsRegion)
+	drv, err := driver.NewDriver(*endpoint, *topo, *awsAccessKeyID, *awsSecret, *awsSessionToken, *awsRegion)
 	if err != nil {
 		log.Fatalln(err)
 	}

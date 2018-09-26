@@ -59,16 +59,16 @@ type ECSStore struct {
 	TaskList      *ecs.ListTasksOutput
 }
 
-type AWSCreateVolOupput struct {
+type AWSCreateVolOutput struct {
 	volID  string
 	Ec2Res *ec2.Reservation
 }
 
 // TODO(anoop): AWS/GCP/Azure credentials
 // TODO(anoop): Check for storage distribution (master, chunk etc.)
-func AWSCreateVol(volName string, d *Driver, volSizeInGB int64) (AWSCreateVolOupput, error) {
+func AWSCreateVol(volName string, d *Driver, volSizeInGB int64) (AWSCreateVolOutput, error) {
 
-	output := AWSCreateVolOupput{}
+	output := AWSCreateVolOutput{}
 
 	// Create AWS Session
 	sess, err := CreateAWSSession(d)
@@ -361,7 +361,7 @@ func CreateEc2Instance(d *Driver, sg, masterIP, volID string, volSizeInGB int64,
 	userDataEncoded := encodedUserData(volSizeInGB, devName, masterIP)
 
 	riInput := &ec2.RunInstancesInput{
-		KeyName:          aws.String("anoop_ireland"), // TODO(anoop): To be removed
+		// KeyName:          aws.String("anoop_ireland"), // TODO(anoop): To be removed
 		ImageId:          imageID,
 		InstanceType:     aws.String(ec2.InstanceTypeT2Micro),
 		MinCount:         aws.Int64(1),

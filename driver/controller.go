@@ -68,16 +68,16 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 	ll.WithField("volume_req", nil).Info("creating volume")
 
 	// TODO(Anoop): Also include moosefs docker on Azure, GCP
-	volOutput, err := AWSCreateVol(volumeName, d, size)
+	volOutput, err := CreateVol(volumeName, d, size)
 	if err != nil {
 		return nil, err
 	}
 
 	resp := &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
-			Id:            volOutput.volID,
+			Id:            volOutput.VolID,
 			CapacityBytes: size,
-			Attributes:    map[string]string{"instanceID": *volOutput.Ec2Res.Instances[0].InstanceId},
+			Attributes:    map[string]string{"instanceID": volOutput.InstanceID},
 		},
 	}
 
@@ -234,7 +234,7 @@ func (d *Driver) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (
 	var entries []*csi.ListVolumesResponse_Entry
 	entries = append(entries, &csi.ListVolumesResponse_Entry{
 		Volume: &csi.Volume{
-			Id:            "35.228.134.224:9421",
+			Id:            "", // TODO(anoop): Get volume IDS somehow
 			CapacityBytes: 1000 * GB,
 		},
 	})
