@@ -34,11 +34,8 @@ func TestSubnet(t *testing.T) {
 
 	svc := ec2.New(createSession())
 
-	result, err := getDefaultSubnet(svc)
+	_, err := getDefaultSubnet(svc)
 	if err != nil {
 		t.Error("Obtained error: ", err)
-	}
-	if result != nil {
-		t.Error("Obtained subnet: ", *result)
 	}
 }

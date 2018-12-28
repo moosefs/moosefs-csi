@@ -23,15 +23,15 @@ publish: build push-image
 
 cred:
 	@echo "==> Scanning secrets in commit history (prevent accidents)"
-	trufflehog --regex --entropy=False file:///$(shell pwd)/../../
+	trufflehog --regex --entropy=False file:///$(shell pwd)
 
 compile:
 	@echo "==> Building the project"
-	@env CGO_ENABLED=0 GOCACHE=/tmp/go-cache GOOS=linux GOARCH=amd64 go build -a -o ${NAME}
+	@env CGO_ENABLED=0 GOCACHE=/tmp/go-cache GOOS=linux GOARCH=amd64 go build -a -o cmd/moosefs-csi-plugin/${NAME} cmd/moosefs-csi-plugin/main.go
 
 test:
 	@echo "==> Running tests"
-	go test ../../driver/*
+	go test driver/*
 
 build:
 	@echo "==> Building the docker image"
