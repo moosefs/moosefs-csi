@@ -1,20 +1,30 @@
 VERSION ?= dev
 NAME=moosefs-csi-plugin
 
-all: publish
+all: ready
 
-publish: clean compile build push
+ready: clean cred test compile
+
+publish: build push-image
+
+cred:
+	@echo "==> Scanning secrets in commit history (prevent accidents)"
+	trufflehog --regex --entropy=False file:///$(shell pwd)/../../
 
 compile:
 	@echo "==> Building the project"
-	@env CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ${NAME}
+	@env CGO_ENABLED=0 GOCACHE=/tmp/go-cache GOOS=linux GOARCH=amd64 go build -a -o ${NAME}
+
+test:
+	@echo "==> Running tests"
+	go test ../../driver/*
 
 build:
 	@echo "==> Building the docker image"
 	@docker build -t quay.io/tuxera/moosefs-csi-plugin:$(VERSION) .
 	@docker build -t quay.io/tuxera/moosefs-csi-plugin:latest .
 
-push:
+push-image:
 	@echo "==> Publishing tuxera/moosefs-csi-plugin:$(VERSION)"
 	@docker push quay.io/tuxera/moosefs-csi-plugin:$(VERSION)
 	@docker push quay.io/tuxera/moosefs-csi-plugin:latest
