@@ -20,7 +20,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/aws/aws-sdk-go/service/ec2"
 	csi "github.com/container-storage-interface/spec/lib/go/csi/v0"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
@@ -67,7 +66,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 
 	ll.WithField("volume_req", nil).Info("creating volume")
 
-	// TODO(Anoop): Also include moosefs docker on Azure, GCP
+	// Generic cloud CreateVol
 	volOutput, err := CreateVol(volumeName, d, size)
 	if err != nil {
 		return nil, err
@@ -75,9 +74,9 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 
 	resp := &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
-			Id:            volOutput.VolID,
+			Id:            volumeName,
 			CapacityBytes: size,
-			Attributes:    map[string]string{"instanceID": volOutput.InstanceID},
+			Attributes:    map[string]string{"instanceID": volOutput.InstanceID, "endpoint": volOutput.Endpoint},
 		},
 	}
 
@@ -97,8 +96,8 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 	})
 	ll.Info("delete volume called")
 
-	// TODO(Anoop): Also include moosefs docker on Azure, GCP
-	err := AWSDeleteVol(req.VolumeId, d)
+	// Generic cloud.DeleteVol
+	err := DeleteVol(req.VolumeId, d)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +109,7 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 // ControllerPublishVolume attaches the given volume to the node
 func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.ControllerPublishVolumeRequest) (*csi.ControllerPublishVolumeResponse, error) {
 	if req.VolumeId == "" {
-		return nil, status.Error(codes.InvalidArgument, "ControllerPublishVolume Volume ID must be provided")
+		return nil, status.Error(codes.InvalidArgument, "ControllerPublishVolume VolumeName must be provided")
 	}
 
 	if req.NodeId == "" {
@@ -121,26 +120,23 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 		return nil, status.Error(codes.InvalidArgument, "ControllerPublishVolume Volume capability must be provided")
 	}
 
+	if req.VolumeAttributes["endpoint"] == "" {
+		return nil, status.Error(codes.InvalidArgument, "ControllerPublishVolume Endpoint must be provided")
+	}
+
 	ll := d.log.WithFields(logrus.Fields{
 		"volume_id":  req.VolumeId,
 		"node_id":    req.NodeId,
 		"instanceID": req.VolumeAttributes["instanceID"],
+		"endpoint":   req.VolumeAttributes["endpoint"],
 		"method":     "controller_publish_volume",
 	})
 	ll.Info("controller publish volume called")
 
-	// TODO(Anoop): For Azure and GCP
-	// Create AWS Session
-	sess, err := CreateAWSSession(d)
-	if err != nil {
+	// Generic cloud.ControlllerPublishVol
+	if err := ControllerPublishVol(d, req); err != nil {
 		return nil, err
 	}
-	svc := ec2.New(sess)
-	// Wait for instances to be up
-	if err := waitUntilInstanceRunning(req.VolumeAttributes["instanceID"], svc, 60); err != nil {
-		return nil, err
-	}
-	ll.Info("Ec2instance running")
 
 	ll.Info("volume is attached")
 	return &csi.ControllerPublishVolumeResponse{}, nil
@@ -159,9 +155,10 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 	})
 	ll.Info("controller unpublish volume called")
 
-	// TODO(Anoop): check what needs to be done more
-	// Moosefs being ditributed filesystem, nothing needed to be done
-	// detachVol()
+	// Generic cloud.ControllerUnPublishVol
+	if err := ControllerUnPublishVol(d, req); err != nil {
+		return nil, err
+	}
 
 	ll.Info("volume is detached")
 	return &csi.ControllerUnpublishVolumeResponse{}, nil

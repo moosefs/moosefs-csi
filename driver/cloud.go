@@ -18,7 +18,10 @@ package driver
 
 import (
 	"errors"
+	"os/exec"
 	"strings"
+
+	csi "github.com/container-storage-interface/spec/lib/go/csi/v0"
 )
 
 const (
@@ -36,7 +39,7 @@ type Topology struct {
 // CreateVolOutput abstractation for all cloud vendors
 type CreateVolOutput struct {
 	AWS        AWSCreateVolOutput
-	VolID      string
+	Endpoint   string
 	InstanceID string
 }
 
@@ -60,7 +63,7 @@ func CreateVol(volName string, d *Driver, volSize int64) (CreateVolOutput, error
 
 		return CreateVolOutput{
 			AWS:        out,
-			VolID:      out.volID,
+			Endpoint:   out.volID,
 			InstanceID: *out.Ec2Res.Instances[0].InstanceId,
 		}, nil
 	} else {
@@ -68,6 +71,44 @@ func CreateVol(volName string, d *Driver, volSize int64) (CreateVolOutput, error
 		return CreateVolOutput{}, errors.New("No support for topologies other than AWS yet")
 	}
 
+}
+
+// DeleteVol - Generic for all cloud vendors
+func DeleteVol(volName string, d *Driver) error {
+	topo := parseTopology(d.topology)
+	if topo.Master == AWS && topo.Chunk == AWS {
+
+		if err := AWSDeleteVol(volName, d); err != nil {
+			return err
+		}
+
+	} else {
+		//TODO(anoop): No support yet
+		return errors.New("No support for topologies other than AWS yet")
+	}
+	return nil
+}
+
+// ControllerPublishVol - Generic for all cloud vendors
+func ControllerPublishVol(d *Driver, req *csi.ControllerPublishVolumeRequest) error {
+	topo := parseTopology(d.topology)
+	if topo.Master == AWS && topo.Chunk == AWS {
+		if err := AWSControllerPublishVol(d, req); err != nil {
+			return nil
+		}
+	} else {
+		//TODO(anoop): No support yet
+		return errors.New("No support for topologies other than AWS yet")
+	}
+	return nil
+}
+
+// ControllerUnPublishVol - generic
+func ControllerUnPublishVol(d *Driver, req *csi.ControllerUnpublishVolumeRequest) error {
+	// TODO(Anoop): check what needs to be done more
+	// Moosefs being ditributed filesystem, nothing needed to be done
+	// detachVol()
+	return nil
 }
 
 // Validates the string format of the topology
@@ -109,4 +150,30 @@ func parseTopology(topology string) *Topology {
 		Master: master,
 		Chunk:  chunk,
 	}
+}
+
+/*GetPublicIP4K8s Get public IP of the given K8s cluster.
+Note that, the k8s cluster must have egress enabled for this to work
+*/
+func GetPublicIP4K8s() string {
+	var (
+		URL1 = "ifconfig.me"
+		URL2 = "ifconfig.co"
+	)
+	curlFunc := func(url string, ch chan string) {
+		out, _ := exec.Command("curl", "-s", url).CombinedOutput()
+		ch <- strings.TrimSpace(string(out))
+	}
+	ip1 := make(chan string)
+	ip2 := make(chan string)
+	go curlFunc(URL1, ip1)
+	go curlFunc(URL2, ip2)
+
+	select {
+	case ip := <-ip1:
+		return ip
+	case ip := <-ip2:
+		return ip
+	}
+
 }

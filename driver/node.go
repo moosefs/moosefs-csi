@@ -41,6 +41,10 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 		return nil, status.Error(codes.InvalidArgument, "NodeStageVolume Volume ID must be provided")
 	}
 
+	if req.VolumeAttributes["endpoint"] == "" {
+		return nil, status.Error(codes.InvalidArgument, "NodeStageVolume Endpoint must be provided")
+	}
+
 	if req.StagingTargetPath == "" {
 		return nil, status.Error(codes.InvalidArgument, "NodeStageVolume Staging Target Path must be provided")
 	}
@@ -49,7 +53,7 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 		return nil, status.Error(codes.InvalidArgument, "NodeStageVolume Volume Capability must be provided")
 	}
 
-	source := req.VolumeId
+	source := req.VolumeAttributes["endpoint"]
 	target := req.StagingTargetPath
 
 	mnt := req.VolumeCapability.GetMount()
@@ -62,6 +66,7 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 
 	ll := d.log.WithFields(logrus.Fields{
 		"volume_id":           req.VolumeId,
+		"endpoint":            req.VolumeAttributes["endpoint"],
 		"staging_target_path": req.StagingTargetPath,
 		"source":              source,
 		"target":              target,
@@ -133,6 +138,10 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 		return nil, status.Error(codes.InvalidArgument, "NodePublishVolume Volume ID must be provided")
 	}
 
+	if req.VolumeAttributes["endpoint"] == "" {
+		return nil, status.Error(codes.InvalidArgument, "NodePublishVolume Endpoint must be provided")
+	}
+
 	if req.StagingTargetPath == "" {
 		return nil, status.Error(codes.InvalidArgument, "NodePublishVolume Staging Target Path must be provided")
 	}
@@ -165,6 +174,7 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 
 	ll := d.log.WithFields(logrus.Fields{
 		"volume_id":     req.VolumeId,
+		"endpoint":      req.VolumeAttributes["endpoint"],
 		"source":        source,
 		"target":        target,
 		"fsType":        fsType,
@@ -174,7 +184,7 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 
 	// we can only check if target is mounted with the diskSource directly.
 	// The staging target path (which is a directory itself) won't work in this case
-	mounted, err := d.mounter.IsMounted(req.VolumeId, target)
+	mounted, err := d.mounter.IsMounted(req.VolumeAttributes["endpoint"], target)
 	if err != nil {
 		return nil, err
 	}
@@ -228,10 +238,6 @@ func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublish
 	return &csi.NodeUnpublishVolumeResponse{}, nil
 }
 
-// NodeGetId returns the unique id of the node. This should eventually return
-// the droplet ID if possible. This is used so the CO knows where to place the
-// workload. The result of this function will be used by the CO in
-// ControllerPublishVolume.
 func (d *Driver) NodeGetId(ctx context.Context, req *csi.NodeGetIdRequest) (*csi.NodeGetIdResponse, error) {
 	d.log.WithField("method", "node_get_id").Info("node get id called")
 	return &csi.NodeGetIdResponse{
@@ -239,9 +245,17 @@ func (d *Driver) NodeGetId(ctx context.Context, req *csi.NodeGetIdRequest) (*csi
 	}, nil
 }
 
-// NodeGetInfo similar to NodeGetId
+// NodeGetId returns the unique id of the node. This is used so the CO knows where to place the
+// workload. The result of this function will be used by the CO in ControllerPublishVolume.
 func (d *Driver) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error) {
-	return &csi.NodeGetInfoResponse{}, nil
+	return &csi.NodeGetInfoResponse{
+		NodeId: d.nodeID,
+		AccessibleTopology: &csi.Topology{
+			Segments: map[string]string{
+				"region": d.awsRegion,
+			},
+		},
+	}, nil
 }
 
 // NodeGetCapabilities returns the supported capabilities of the node server
