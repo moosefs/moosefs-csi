@@ -21,13 +21,14 @@ import (
 	"os/exec"
 	"strings"
 
-	csi "github.com/container-storage-interface/spec/lib/go/csi/v0"
+	"github.com/container-storage-interface/spec/lib/go/csi"
 )
 
 const (
 	AWS   = "AWS"   // Amazon Web Services
 	GCP   = "GCP"   // Google Cloud Platform
 	AZURE = "AZURE" // Azure cloud Platform
+	EP    = "EP"
 )
 
 // Topology for  MooseFS topology
@@ -44,7 +45,7 @@ type CreateVolOutput struct {
 }
 
 // CreateVol - Generic for all cloud vendors
-func CreateVol(volName string, d *Driver, volSize int64) (CreateVolOutput, error) {
+func CreateVol(volName string, d *CSIDriver, volSize int64) (CreateVolOutput, error) {
 
 	if d.topology == "" {
 		return CreateVolOutput{}, errors.New("MooseFS topology cannot be empty")
@@ -66,15 +67,22 @@ func CreateVol(volName string, d *Driver, volSize int64) (CreateVolOutput, error
 			Endpoint:   out.volID,
 			InstanceID: *out.Ec2Res.Instances[0].InstanceId,
 		}, nil
+	} else if topo.Master == EP && topo.Chunk == EP {
+
+		return CreateVolOutput{
+			AWS:        AWSCreateVolOutput{},
+			Endpoint:   d.mfsEP + ":",
+			InstanceID: d.mfsEP + ":",
+		}, nil
 	} else {
 		//TODO(anoop): No support yet
-		return CreateVolOutput{}, errors.New("No support for topologies other than AWS yet")
+		return CreateVolOutput{}, errors.New("No support for topologies other than AWS/EP yet")
 	}
 
 }
 
 // DeleteVol - Generic for all cloud vendors
-func DeleteVol(volName string, d *Driver) error {
+func DeleteVol(volName string, d *CSIDriver) error {
 	topo := parseTopology(d.topology)
 	if topo.Master == AWS && topo.Chunk == AWS {
 
@@ -82,29 +90,33 @@ func DeleteVol(volName string, d *Driver) error {
 			return err
 		}
 
+	} else if topo.Master == EP && topo.Chunk == EP {
+		// Do nothing for now
 	} else {
 		//TODO(anoop): No support yet
-		return errors.New("No support for topologies other than AWS yet")
+		return errors.New("No support for topologies other than AWS/EP yet")
 	}
 	return nil
 }
 
 // ControllerPublishVol - Generic for all cloud vendors
-func ControllerPublishVol(d *Driver, req *csi.ControllerPublishVolumeRequest) error {
+func ControllerPublishVol(d *CSIDriver, req *csi.ControllerPublishVolumeRequest) error {
 	topo := parseTopology(d.topology)
 	if topo.Master == AWS && topo.Chunk == AWS {
 		if err := AWSControllerPublishVol(d, req); err != nil {
 			return nil
 		}
+	} else if topo.Master == EP && topo.Chunk == EP {
+		// Do nothing for now
 	} else {
 		//TODO(anoop): No support yet
-		return errors.New("No support for topologies other than AWS yet")
+		return errors.New("No support for topologies other than AWS/EP yet")
 	}
 	return nil
 }
 
 // ControllerUnPublishVol - generic
-func ControllerUnPublishVol(d *Driver, req *csi.ControllerUnpublishVolumeRequest) error {
+func ControllerUnPublishVol(d *CSIDriver, req *csi.ControllerUnpublishVolumeRequest) error {
 	// TODO(Anoop): check what needs to be done more
 	// Moosefs being ditributed filesystem, nothing needed to be done
 	// detachVol()
@@ -124,7 +136,7 @@ func verifyTopologyFormat(topology string) bool {
 		return false
 	}
 	if !strings.ContainsAny(topology, AWS) && !strings.ContainsAny(topology, GCP) &&
-		!strings.ContainsAny(topology, AZURE) {
+		!strings.ContainsAny(topology, AZURE) && !strings.ContainsAny(topology, EP) {
 		return false
 	}
 	return true
@@ -139,7 +151,7 @@ func parseTopology(topology string) *Topology {
 	t := strings.Split(topology, ",")
 	for _, c := range t {
 		m := strings.Split(c, ":")
-		if m[0] == "master:" {
+		if m[0] == "master" {
 			master = m[1]
 		} else {
 			chunk = m[1]

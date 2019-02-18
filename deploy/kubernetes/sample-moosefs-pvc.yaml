@@ -7,5 +7,5 @@ spec:
   - ReadWriteOnce
   resources:
     requests:
-      storage: 5Gi
+      storage: 5Gi # In case of EP, this value does not have any effect
   storageClassName: moosefs-block-storage

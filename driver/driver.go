@@ -24,43 +24,48 @@ import (
 	"path"
 	"path/filepath"
 
-	csi "github.com/container-storage-interface/spec/lib/go/csi/v0"
+	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 )
 
 const (
-	driverName    = "com.tuxera.csi.moosefs"
-	vendorVersion = "dev"
+	driverName   = "com.tuxera.csi.moosefs"
+	version      = "dev"
+	gitTreeState = "not a git tree"
+	commit       = ""
 )
 
-// Driver implements the following CSI interfaces:
+// CSIDriver implements the following CSI interfaces:
 //
 //   csi.IdentityServer
 //   csi.ControllerServer
 //   csi.NodeServer
 //
-type Driver struct {
-	endpoint        string
-	topology        string
-	nodeID          string
+type CSIDriver struct {
+	endpoint string
+	topology string
+	nodeID   string
+	// AWS
 	awsAccessKey    string
 	awsSecret       string
 	awsSessionToken string
 	awsRegion       string
+	// Existing endpoint
+	mfsEP string
 
 	srv     *grpc.Server
 	log     *logrus.Entry
 	mounter Mounter
 }
 
-// NewDriver returns a CSI plugin that contains the necessary gRPC
+// NewCSIDriver returns a CSI plugin that contains the necessary gRPC
 // interfaces to interact with Kubernetes over unix domain sockets for
 // managaing Moosefs Storage
-func NewDriver(ep, topo, awsAccessKeyID, awsSecret, awsSessionToken, awsRegion string) (*Driver, error) {
+func NewCSIDriver(ep, topo, awsAccessKeyID, awsSecret, awsSessionToken, awsRegion, mfsEP string) (*CSIDriver, error) {
 	nodeID := ep // TODO(Anoop): get hostname from EP
 
-	return &Driver{
+	return &CSIDriver{
 		endpoint:        ep,
 		topology:        topo,
 		nodeID:          nodeID,
@@ -68,6 +73,7 @@ func NewDriver(ep, topo, awsAccessKeyID, awsSecret, awsSessionToken, awsRegion s
 		awsSecret:       awsSecret,
 		awsSessionToken: awsSessionToken,
 		awsRegion:       awsRegion,
+		mfsEP:           mfsEP,
 		mounter:         &mounter{},
 		log: logrus.New().WithFields(logrus.Fields{
 			"node_id": nodeID,
@@ -76,7 +82,7 @@ func NewDriver(ep, topo, awsAccessKeyID, awsSecret, awsSessionToken, awsRegion s
 }
 
 // Run starts the CSI plugin by communication over the given endpoint
-func (d *Driver) Run() error {
+func (d *CSIDriver) Run() error {
 	u, err := url.Parse(d.endpoint)
 	if err != nil {
 		return fmt.Errorf("unable to parse address: %q", err)
@@ -124,7 +130,22 @@ func (d *Driver) Run() error {
 }
 
 // Stop stops the plugin
-func (d *Driver) Stop() {
+func (d *CSIDriver) Stop() {
 	d.log.Info("server stopped")
 	d.srv.Stop()
+}
+
+func GetVersion() string {
+	return version
+}
+
+// GetCommit returns the current commit hash value, as inserted at build time.
+func GetCommit() string {
+	return commit
+}
+
+// GetTreeState returns the current state of git tree, either "clean" or
+// "dirty".
+func GetTreeState() string {
+	return gitTreeState
 }

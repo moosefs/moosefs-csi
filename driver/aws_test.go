@@ -16,11 +16,8 @@
 package driver
 
 import (
-	"testing"
-
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/ec2"
 )
 
 func createSession() *session.Session {
@@ -30,7 +27,7 @@ func createSession() *session.Session {
 	return sess
 }
 
-func TestSubnet(t *testing.T) {
+/* func TestSubnet(t *testing.T) {
 
 	svc := ec2.New(createSession())
 
@@ -38,4 +35,4 @@ func TestSubnet(t *testing.T) {
 	if err != nil {
 		t.Error("Obtained error: ", err)
 	}
-}
+} */

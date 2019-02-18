@@ -32,7 +32,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ecs"
-	csi "github.com/container-storage-interface/spec/lib/go/csi/v0"
+	"github.com/container-storage-interface/spec/lib/go/csi"
 )
 
 var (
@@ -66,7 +66,7 @@ type AWSCreateVolOutput struct {
 
 // TODO(anoop): AWS/GCP/Azure credentials
 // TODO(anoop): Check for storage distribution (master, chunk etc.)
-func AWSCreateVol(volName string, d *Driver, volSizeInGB int64) (AWSCreateVolOutput, error) {
+func AWSCreateVol(volName string, d *CSIDriver, volSizeInGB int64) (AWSCreateVolOutput, error) {
 
 	output := AWSCreateVolOutput{}
 
@@ -115,7 +115,7 @@ func AWSCreateVol(volName string, d *Driver, volSizeInGB int64) (AWSCreateVolOut
 }
 
 // AWSDeleteVol ...
-func AWSDeleteVol(volID string, d *Driver) error {
+func AWSDeleteVol(volID string, d *CSIDriver) error {
 
 	ll := d.log.WithFields(logrus.Fields{
 		"volID":  volID,
@@ -146,7 +146,7 @@ func AWSDeleteVol(volID string, d *Driver) error {
 }
 
 // AWSControllerPublishVol -
-func AWSControllerPublishVol(d *Driver, req *csi.ControllerPublishVolumeRequest) error {
+func AWSControllerPublishVol(d *CSIDriver, req *csi.ControllerPublishVolumeRequest) error {
 
 	// Create AWS Session
 	sess, err := CreateAWSSession(d)
@@ -155,14 +155,14 @@ func AWSControllerPublishVol(d *Driver, req *csi.ControllerPublishVolumeRequest)
 	}
 	svc := ec2.New(sess)
 	// Wait for instances to be up
-	if err := waitUntilInstanceRunning(req.VolumeAttributes["instanceID"], svc, 60); err != nil {
+	if err := waitUntilInstanceRunning(req.VolumeContext["instanceID"], svc, 60); err != nil {
 		return err
 	}
 	return nil
 }
 
 // CreateAWSSession ...
-func CreateAWSSession(d *Driver) (*session.Session, error) {
+func CreateAWSSession(d *CSIDriver) (*session.Session, error) {
 	sess, err := session.NewSession(
 		&aws.Config{Region: aws.String(d.awsRegion),
 			Credentials: credentials.NewStaticCredentials(d.awsAccessKey, d.awsSecret, d.awsSessionToken),
@@ -212,7 +212,7 @@ func DeleteECSCluster(sess *session.Session, name string) error {
 
 */
 // CreateECSService ...
-func CreateECSService(sess *session.Session, d *Driver, clusterName string) (ECSStore, error) {
+func CreateECSService(sess *session.Session, d *CSIDriver, clusterName string) (ECSStore, error) {
 	store := ECSStore{}
 	ll := d.log.WithFields(logrus.Fields{
 		"method":         "CreateECSService",
@@ -342,7 +342,7 @@ func DeleteECSService(sess *session.Session, region, clusterName string) error {
 // CreateEc2Instance ...
 // TODO(anoop): not idempotent
 // TODO(anoop): Wait for the chunkService
-func CreateEc2Instance(d *Driver, masterIP, volID string, volSizeInGB int64, sess *session.Session) (*ec2.Reservation, error) {
+func CreateEc2Instance(d *CSIDriver, masterIP, volID string, volSizeInGB int64, sess *session.Session) (*ec2.Reservation, error) {
 	devName := "/dev/xvdh"
 	imageName := "amzn-ami-hvm-2018.03.0.20180412-x86_64-ebs" // ensure its in all regions
 	ll := d.log.WithFields(logrus.Fields{
@@ -400,7 +400,7 @@ func CreateEc2Instance(d *Driver, masterIP, volID string, volSizeInGB int64, ses
 
 	riInput := &ec2.RunInstancesInput{
 		ImageId:          imageID,
-		InstanceType:     aws.String(ec2.InstanceTypeT3Nano),
+		InstanceType:     aws.String(ec2.InstanceTypeT2Nano),
 		MinCount:         aws.Int64(1),
 		MaxCount:         aws.Int64(1),
 		UserData:         aws.String(userDataEncoded),
@@ -439,7 +439,7 @@ func CreateEc2Instance(d *Driver, masterIP, volID string, volSizeInGB int64, ses
 }
 
 // DeleteEc2Instance ...
-func DeleteEc2Instance(volID string, d *Driver, sess *session.Session) (*ec2.TerminateInstancesOutput, error) {
+func DeleteEc2Instance(volID string, d *CSIDriver, sess *session.Session) (*ec2.TerminateInstancesOutput, error) {
 
 	// Create an EC2 service client.
 	svc := ec2.New(sess)
@@ -648,7 +648,7 @@ func getDefaultSubnet(svc *ec2.EC2) (*string, error) {
 }
 
 // GetPublicIP4 ...
-func GetPublicIP4(sess *session.Session, d *Driver, clusterName, taskArn string) (*string, error) {
+func GetPublicIP4(sess *session.Session, d *CSIDriver, clusterName, taskArn string) (*string, error) {
 
 	ll := d.log.WithFields(logrus.Fields{
 		"method":      "GetPublicIP4",

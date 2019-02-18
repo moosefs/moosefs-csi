@@ -19,7 +19,7 @@ all: ready
 
 ready: clean cred test compile
 
-publish: build push-image
+publish: ready build push-image
 
 cred:
 	@echo "==> Scanning secrets in commit history (prevent accidents)"
@@ -35,8 +35,8 @@ test:
 
 build:
 	@echo "==> Building the docker image"
-	@docker build -t quay.io/tuxera/moosefs-csi-plugin:$(VERSION) .
-	@docker build -t quay.io/tuxera/moosefs-csi-plugin:latest .
+	@docker build -t quay.io/tuxera/moosefs-csi-plugin:$(VERSION) cmd/moosefs-csi-plugin
+	@docker build -t quay.io/tuxera/moosefs-csi-plugin:latest cmd/moosefs-csi-plugin
 
 push-image:
 	@echo "==> Publishing tuxera/moosefs-csi-plugin:$(VERSION)"

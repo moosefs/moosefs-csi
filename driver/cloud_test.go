@@ -45,3 +45,48 @@ func TestGetPublicIP4K8s(t *testing.T) {
 	}
 
 }
+
+func TestCreateVol(t *testing.T) {
+	// Only EP for now
+	ep := "192.168.75.210"
+	topo := "master:EP,chunk:EP"
+
+	d := &CSIDriver{
+		topology: topo,
+		mfsEP:    ep,
+	}
+
+	out, err := CreateVol("testVol", d, 100)
+	if err != nil {
+		t.Log(err)
+		t.Errorf("Some error returned")
+	}
+	if out.Endpoint != ep+":" {
+		t.Errorf("Wrong CreateVol endpoint: " + out.Endpoint)
+	}
+}
+
+func TestparseTopology(t *testing.T) {
+	topo := parseTopology("master:EP,chunk:EP")
+	if topo.Master != "EP" {
+		t.Errorf("Got wrong master topo: " + topo.Master + " expected: EP")
+	}
+	if topo.Chunk != "EP" {
+		t.Errorf("Got wrong chunk topo: " + topo.Master + " expected: EP")
+	}
+}
+
+func TestverifyToplogyFormat(t *testing.T) {
+	ok := verifyTopologyFormat("master:EP,chunk:EP")
+	if !ok {
+		t.Errorf("Topology verification failed for: master:EP,chunk:EP")
+	}
+	ok = verifyTopologyFormat("master:AWS,chunk:EP")
+	if !ok {
+		t.Errorf("Topology verification failed for: master:AWS,chunk:EP")
+	}
+	ok = verifyTopologyFormat("master:AWS,chunk:AWS")
+	if !ok {
+		t.Errorf("Topology verification failed for: master:AWS,chunk:AWS")
+	}
+}

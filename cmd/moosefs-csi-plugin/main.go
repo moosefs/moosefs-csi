@@ -25,16 +25,19 @@ import (
 
 func main() {
 	var (
-		endpoint        = flag.String("endpoint", "unix:///var/lib/kubelet/plugins/com.tuxera.csi.moosefs/csi.sock", "CSI endpoint")
-		topo            = flag.String("topology", "master:AWS,chunk:AWS", "MooseFS cluster topology")
+		endpoint = flag.String("endpoint", "unix:///var/lib/kubelet/plugins/com.tuxera.csi.moosefs/csi.sock", "CSI endpoint")
+		topo     = flag.String("topology", "master:AWS,chunk:AWS", "MooseFS cluster topology, e.g. For AWS, master:AWS,chunk:AWS. For exiting cluster master:ep,chunk=ep")
+		// AWS
 		awsAccessKeyID  = flag.String("aws-access", "", "AWS Access key Id")
 		awsSessionToken = flag.String("aws-session", "", "AWS Session token")
 		awsSecret       = flag.String("aws-secret", "", "AWS Secret Access key")
-		awsRegion       = flag.String("aws-region", "eu-west-1", "AWS region where to deploy")
+		awsRegion       = flag.String("aws-region", "", "AWS region where to deploy")
+		// Already existing endpoint
+		mfsEP = flag.String("mfs-endpoint", "", "MooseFS endpoint to use (already provisioned cluster), e.g. 192.168.75.201: (remember the ':' suffix)")
 	)
 	flag.Parse()
 
-	drv, err := driver.NewDriver(*endpoint, *topo, *awsAccessKeyID, *awsSecret, *awsSessionToken, *awsRegion)
+	drv, err := driver.NewCSIDriver(*endpoint, *topo, *awsAccessKeyID, *awsSecret, *awsSessionToken, *awsRegion, *mfsEP)
 	if err != nil {
 		log.Fatalln(err)
 	}
