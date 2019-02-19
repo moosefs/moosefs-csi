@@ -23,6 +23,7 @@ publish: ready build push-image
 
 cred:
 	@echo "==> Scanning secrets in commit history (prevent accidents)"
+	# trufflehog --regex --entropy=False --rules scripts/truffleHogRegexes.json  file:///$(shell pwd)
 	trufflehog --regex --entropy=False file:///$(shell pwd)
 
 compile:
