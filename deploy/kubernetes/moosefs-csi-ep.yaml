@@ -310,6 +310,7 @@ spec:
             - name: MFS_TOPOLOGY
               value: "master:EP,chunk:EP"
             - name: MFS_ENDPOINT
+              value: "192.X.X.X" # IP address of your MooseFS master
           imagePullPolicy: "Always"
           volumeMounts:
             - name: socket-dir
@@ -374,6 +375,7 @@ spec:
             - name: MFS_TOPOLOGY
               value: "master:EP,chunk:EP"
             - name: MFS_ENDPOINT
+              value: "192.X.X.X" # IP address of your MooseFS master
           imagePullPolicy: "IfNotPresent"
           volumeMounts:
             - name: plugin-dir

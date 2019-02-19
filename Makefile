@@ -31,7 +31,7 @@ compile:
 
 test:
 	@echo "==> Running tests"
-	go test driver/*
+	go test -v ./driver/...
 
 build:
 	@echo "==> Building the docker image"

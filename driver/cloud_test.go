@@ -48,7 +48,7 @@ func TestGetPublicIP4K8s(t *testing.T) {
 
 func TestCreateVol(t *testing.T) {
 	// Only EP for now
-	ep := "192.168.75.210"
+	ep := "192.168.1.1"
 	topo := "master:EP,chunk:EP"
 
 	d := &CSIDriver{
@@ -66,7 +66,7 @@ func TestCreateVol(t *testing.T) {
 	}
 }
 
-func TestparseTopology(t *testing.T) {
+func TestParseTopology(t *testing.T) {
 	topo := parseTopology("master:EP,chunk:EP")
 	if topo.Master != "EP" {
 		t.Errorf("Got wrong master topo: " + topo.Master + " expected: EP")
@@ -76,7 +76,7 @@ func TestparseTopology(t *testing.T) {
 	}
 }
 
-func TestverifyToplogyFormat(t *testing.T) {
+func TestVerifyToplogyFormat(t *testing.T) {
 	ok := verifyTopologyFormat("master:EP,chunk:EP")
 	if !ok {
 		t.Errorf("Topology verification failed for: master:EP,chunk:EP")
