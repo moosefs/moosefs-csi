@@ -94,7 +94,7 @@ spec:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
         - name: moosefs-csi-plugin
-          image: quay.io/tuxera/moosefs-csi-plugin:dev-0.0.4-11
+          image: quay.io/tuxera/moosefs-csi-plugin:dev-0.0.4-29
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
             - "--topology=$(MFS_TOPOLOGY)"
@@ -114,7 +114,7 @@ spec:
             - name: AWS_SESSION_TOKEN
               value: "AWS_SESSION_TOKEN"
             - name: AWS_REGION
-              value: "eu-west-1"
+              value: "eu-west-2"
           imagePullPolicy: "IfNotPresent"
           volumeMounts:
             - name: socket-dir
@@ -210,7 +210,7 @@ spec:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
         - name: moosefs-csi-plugin
-          image: quay.io/tuxera/moosefs-csi-plugin:dev-0.0.4-11
+          image: quay.io/tuxera/moosefs-csi-plugin:dev-0.0.4-29
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
             - "--topology=$(MFS_TOPOLOGY)"
@@ -230,7 +230,7 @@ spec:
             - name: AWS_SESSION_TOKEN
               value: "AWS_SESSION_TOKEN"
             - name: AWS_REGION
-              value: "eu-west-1"
+              value: "eu-west-2"
           imagePullPolicy: "IfNotPresent"
           volumeMounts:
             - name: socket-dir
@@ -323,7 +323,7 @@ spec:
             capabilities:
               add: ["SYS_ADMIN"]
             allowPrivilegeEscalation: true
-          image: quay.io/tuxera/moosefs-csi-plugin:dev-0.0.4-11
+          image: quay.io/tuxera/moosefs-csi-plugin:dev-0.0.4-29
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
             - "--topology=$(MFS_TOPOLOGY)"
@@ -343,7 +343,7 @@ spec:
             - name: AWS_SESSION_TOKEN
               value: "AWS_SESSION_TOKEN"
             - name: AWS_REGION
-              value: "eu-west-1"
+              value: "eu-west-2"
           imagePullPolicy: "IfNotPresent"
           volumeMounts:
             - name: plugin-dir

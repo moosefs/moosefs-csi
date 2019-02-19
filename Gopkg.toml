@@ -27,8 +27,8 @@
 
 [[constraint]]
   name = "github.com/container-storage-interface/spec"
-#  version = "0.3.0"
-   branch = "master"
+  version = "v1.0.0"
+#  branch = "master"
 
 [[constraint]]
   name = "github.com/sirupsen/logrus"
@@ -36,7 +36,7 @@
 
 [[constraint]]
   name = "google.golang.org/grpc"
-  version = "1.14.0"
+  version = "v1.11.3"
 
 [prune]
   go-tests = true

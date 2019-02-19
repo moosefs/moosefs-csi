@@ -1,5 +1,5 @@
 /*
-   Copyright 2018 Tuxera Oy. All Rights Reserved.
+   Copyright 2019 Tuxera Oy. All Rights Reserved.
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -18,13 +18,17 @@ package driver
 
 import (
 	"errors"
+	"os/exec"
 	"strings"
+
+	"github.com/container-storage-interface/spec/lib/go/csi"
 )
 
 const (
 	AWS   = "AWS"   // Amazon Web Services
 	GCP   = "GCP"   // Google Cloud Platform
 	AZURE = "AZURE" // Azure cloud Platform
+	EP    = "EP"
 )
 
 // Topology for  MooseFS topology
@@ -36,12 +40,12 @@ type Topology struct {
 // CreateVolOutput abstractation for all cloud vendors
 type CreateVolOutput struct {
 	AWS        AWSCreateVolOutput
-	VolID      string
+	Endpoint   string
 	InstanceID string
 }
 
 // CreateVol - Generic for all cloud vendors
-func CreateVol(volName string, d *Driver, volSize int64) (CreateVolOutput, error) {
+func CreateVol(volName string, d *CSIDriver, volSize int64) (CreateVolOutput, error) {
 
 	if d.topology == "" {
 		return CreateVolOutput{}, errors.New("MooseFS topology cannot be empty")
@@ -60,14 +64,63 @@ func CreateVol(volName string, d *Driver, volSize int64) (CreateVolOutput, error
 
 		return CreateVolOutput{
 			AWS:        out,
-			VolID:      out.volID,
+			Endpoint:   out.volID,
 			InstanceID: *out.Ec2Res.Instances[0].InstanceId,
+		}, nil
+	} else if topo.Master == EP && topo.Chunk == EP {
+
+		return CreateVolOutput{
+			AWS:        AWSCreateVolOutput{},
+			Endpoint:   d.mfsEP + ":",
+			InstanceID: d.mfsEP + ":",
 		}, nil
 	} else {
 		//TODO(anoop): No support yet
-		return CreateVolOutput{}, errors.New("No support for topologies other than AWS yet")
+		return CreateVolOutput{}, errors.New("No support for topologies other than AWS/EP yet")
 	}
 
+}
+
+// DeleteVol - Generic for all cloud vendors
+func DeleteVol(volName string, d *CSIDriver) error {
+	topo := parseTopology(d.topology)
+	if topo.Master == AWS && topo.Chunk == AWS {
+
+		if err := AWSDeleteVol(volName, d); err != nil {
+			return err
+		}
+
+	} else if topo.Master == EP && topo.Chunk == EP {
+		// Do nothing for now
+	} else {
+		//TODO(anoop): No support yet
+		return errors.New("No support for topologies other than AWS/EP yet")
+	}
+	return nil
+}
+
+// ControllerPublishVol - Generic for all cloud vendors
+func ControllerPublishVol(d *CSIDriver, req *csi.ControllerPublishVolumeRequest) error {
+	topo := parseTopology(d.topology)
+	if topo.Master == AWS && topo.Chunk == AWS {
+		if err := AWSControllerPublishVol(d, req); err != nil {
+			return nil
+		}
+	} else if topo.Master == EP && topo.Chunk == EP {
+		// Do nothing for now
+	} else {
+		//TODO(anoop): No support yet
+		return errors.New("No support for topologies other than AWS/EP yet")
+	}
+	return nil
+}
+
+// ControllerUnPublishVol - generic
+func ControllerUnPublishVol(d *CSIDriver, req *csi.ControllerUnpublishVolumeRequest) error {
+	// TODO(Anoop): check what needs to be done more
+	// Moosefs being ditributed filesystem, nothing needed to be done
+	// detachVol()
+	return nil
 }
 
 // Validates the string format of the topology
@@ -83,7 +136,7 @@ func verifyTopologyFormat(topology string) bool {
 		return false
 	}
 	if !strings.ContainsAny(topology, AWS) && !strings.ContainsAny(topology, GCP) &&
-		!strings.ContainsAny(topology, AZURE) {
+		!strings.ContainsAny(topology, AZURE) && !strings.ContainsAny(topology, EP) {
 		return false
 	}
 	return true
@@ -98,7 +151,7 @@ func parseTopology(topology string) *Topology {
 	t := strings.Split(topology, ",")
 	for _, c := range t {
 		m := strings.Split(c, ":")
-		if m[0] == "master:" {
+		if m[0] == "master" {
 			master = m[1]
 		} else {
 			chunk = m[1]
@@ -109,4 +162,30 @@ func parseTopology(topology string) *Topology {
 		Master: master,
 		Chunk:  chunk,
 	}
+}
+
+/*GetPublicIP4K8s Get public IP of the given K8s cluster.
+Note that, the k8s cluster must have egress enabled for this to work
+*/
+func GetPublicIP4K8s() string {
+	var (
+		URL1 = "ifconfig.me"
+		URL2 = "ifconfig.co"
+	)
+	curlFunc := func(url string, ch chan string) {
+		out, _ := exec.Command("curl", "-s", url).CombinedOutput()
+		ch <- strings.TrimSpace(string(out))
+	}
+	ip1 := make(chan string)
+	ip2 := make(chan string)
+	go curlFunc(URL1, ip1)
+	go curlFunc(URL2, ip2)
+
+	select {
+	case ip := <-ip1:
+		return ip
+	case ip := <-ip2:
+		return ip
+	}
+
 }

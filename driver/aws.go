@@ -1,5 +1,5 @@
 /*
-   Copyright 2018 Tuxera Oy. All Rights Reserved.
+   Copyright 2019 Tuxera Oy. All Rights Reserved.
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -32,7 +32,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ecs"
-	csi "github.com/container-storage-interface/spec/lib/go/csi/v0"
+	"github.com/container-storage-interface/spec/lib/go/csi"
 )
 
 var (
@@ -66,7 +66,7 @@ type AWSCreateVolOutput struct {
 
 // TODO(anoop): AWS/GCP/Azure credentials
 // TODO(anoop): Check for storage distribution (master, chunk etc.)
-func AWSCreateVol(volName string, d *Driver, volSizeInGB int64) (AWSCreateVolOutput, error) {
+func AWSCreateVol(volName string, d *CSIDriver, volSizeInGB int64) (AWSCreateVolOutput, error) {
 
 	output := AWSCreateVolOutput{}
 
@@ -87,14 +87,14 @@ func AWSCreateVol(volName string, d *Driver, volSizeInGB int64) (AWSCreateVolOut
 	ll.Info("create ECSCluster completed")
 
 	// Create the fargate master service
-	store, err := CreateECSService(sess, d, volName, volName, mfsTypeMaster)
+	store, err := CreateECSService(sess, d, volName)
 	if err != nil {
 		return output, err
 	}
 	ll.Info("create master ECSService completed")
 
 	// Get Master endpoint
-	ep, err := GetPublicIP4(sess, d.awsRegion, volName, *store.TaskList.TaskArns[0])
+	ep, err := GetPublicIP4(sess, d, volName, *store.TaskList.TaskArns[0])
 	if err != nil {
 		return output, err
 	}
@@ -102,7 +102,7 @@ func AWSCreateVol(volName string, d *Driver, volSizeInGB int64) (AWSCreateVolOut
 
 	volID := *ep + ":"
 	// Attach chunkserver volumes
-	createEc2Output, err := CreateEc2Instance(d, *store.SecurityGroup.GroupName, *ep, volID, volSizeInGB, sess)
+	createEc2Output, err := CreateEc2Instance(d, *ep, volID, volSizeInGB, sess)
 	if err != nil {
 		return output, err
 	}
@@ -115,26 +115,54 @@ func AWSCreateVol(volName string, d *Driver, volSizeInGB int64) (AWSCreateVolOut
 }
 
 // AWSDeleteVol ...
-func AWSDeleteVol(volID string, d *Driver) error {
+func AWSDeleteVol(volID string, d *CSIDriver) error {
+
+	ll := d.log.WithFields(logrus.Fields{
+		"volID":  volID,
+		"method": "AWSDeleteVol",
+		"region": d.awsRegion,
+	})
+
+	clusterName := volID // clusterName is same as volID
 
 	// Create AWS Session
 	sess, err := CreateAWSSession(d)
 
-	_, err = DeleteEc2Instance(volID, d, sess)
+	ll.Info("AWSDeleteVol called")
+	_, err = DeleteEc2Instance(clusterName, d, sess)
 	if err != nil {
 		return err
 	}
+	ll.Info("Ec2 instance deleted successfully")
 
-	volName := volID // TODO(anoop): get volName from volID
-	_, err = DeleteECSService(sess, d.awsRegion, volName, volName, ECSStore{})
+	if err := DeleteECSService(sess, d.awsRegion, clusterName); err != nil {
+		return err
+	}
+	ll.Info("ECS service deleted successfully")
+
+	DeleteECSCluster(sess, clusterName)
+	ll.Info("ECS cluster deleted successfully")
+	return nil
+}
+
+// AWSControllerPublishVol -
+func AWSControllerPublishVol(d *CSIDriver, req *csi.ControllerPublishVolumeRequest) error {
+
+	// Create AWS Session
+	sess, err := CreateAWSSession(d)
 	if err != nil {
+		return err
+	}
+	svc := ec2.New(sess)
+	// Wait for instances to be up
+	if err := waitUntilInstanceRunning(req.VolumeContext["instanceID"], svc, 60); err != nil {
 		return err
 	}
 	return nil
 }
 
 // CreateAWSSession ...
-func CreateAWSSession(d *Driver) (*session.Session, error) {
+func CreateAWSSession(d *CSIDriver) (*session.Session, error) {
 	sess, err := session.NewSession(
 		&aws.Config{Region: aws.String(d.awsRegion),
 			Credentials: credentials.NewStaticCredentials(d.awsAccessKey, d.awsSecret, d.awsSessionToken),
@@ -163,41 +191,42 @@ func CreateECSCluster(sess *session.Session, name string) (*ecs.CreateClusterOut
 }
 
 // DeleteECSCluster ...
-func DeleteECSCluster(creds AwsCreds, region, name string) (*ecs.DeleteClusterOutput, error) {
-	sess, err := session.NewSession(
-		&aws.Config{Region: aws.String(region),
-			Credentials: credentials.NewStaticCredentials(creds.ID, creds.secret, creds.token),
-		})
-	if err != nil {
-		return nil, err
-	}
-
+func DeleteECSCluster(sess *session.Session, name string) error {
 	svc := ecs.New(sess)
 	input := &ecs.DeleteClusterInput{
 		Cluster: aws.String(name),
 	}
 
-	result, err := svc.DeleteCluster(input)
-	if err != nil {
-		return nil, err
+	if _, err := svc.DeleteCluster(input); err != nil {
+		return err
 	}
 
-	return result, nil
+	return nil
 }
 
+/*
+	Creates ECS service with:
+		- taskDefinition with ClusterName
+		- SecurityGroup with ClusterName
+		- Service with ClusterName
+
+*/
 // CreateECSService ...
-func CreateECSService(sess *session.Session, d *Driver, name, clusterName string, mfsType MfsType) (ECSStore, error) {
+func CreateECSService(sess *session.Session, d *CSIDriver, clusterName string) (ECSStore, error) {
 	store := ECSStore{}
 	ll := d.log.WithFields(logrus.Fields{
 		"method":         "CreateECSService",
-		"serviceName":    name,
+		"serviceName":    clusterName,
 		"clusterName":    clusterName,
-		"taskDefinition": mfsType.name,
+		"taskDefinition": mfsTypeMaster.name,
 	})
 
-	// Register task definition
+	// Ec2/Ecs service clients
+	svcEc2 := ec2.New(sess)
 	svc := ecs.New(sess)
-	output, err := registerTaskDefinition(svc, mfsType)
+
+	// Register task definition
+	output, err := registerTaskDefinition(svc, clusterName)
 	if err != nil {
 		return store, err
 	}
@@ -205,17 +234,25 @@ func CreateECSService(sess *session.Session, d *Driver, name, clusterName string
 	ll.Info("Task definition registered")
 
 	// Create securityGroup
-	sgs, err := createSecurityGroup(clusterName, "Created for moosefs-csi-fargate", d.awsRegion, sess)
+	// clusterIP := GetPublicIP4K8s() // TODO(anoop): fix this
+	clusterIP := "0.0.0.0"
+	sgs, err := createSecurityGroup(clusterName, "Created for moosefs-csi-fargate", d.awsRegion, svcEc2, clusterIP)
 	if err != nil {
 		return store, err
 	}
 	store.SecurityGroup = sgs[0]
 	ll.Info("SecurityGroup set")
 
+	// Create subnet
+	sn, err := getDefaultSubnet(svcEc2)
+	if err != nil {
+		return store, err
+	}
+
 	//Check and Create the service
 	svcInput := &ecs.DescribeServicesInput{
 		Cluster:  aws.String(clusterName),
-		Services: []*string{aws.String(name)},
+		Services: []*string{aws.String(clusterName)},
 	}
 	svcOutput, err := svc.DescribeServices(svcInput)
 	if err != nil {
@@ -229,14 +266,14 @@ func CreateECSService(sess *session.Session, d *Driver, name, clusterName string
 		input := &ecs.CreateServiceInput{
 			Cluster:        aws.String(clusterName),
 			DesiredCount:   aws.Int64(1),
-			ServiceName:    aws.String(name),
-			TaskDefinition: aws.String(mfsType.name),
+			ServiceName:    aws.String(clusterName),
+			TaskDefinition: aws.String(clusterName),
 			LaunchType:     aws.String("FARGATE"),
 			NetworkConfiguration: &ecs.NetworkConfiguration{
 				AwsvpcConfiguration: &ecs.AwsVpcConfiguration{
 					AssignPublicIp: aws.String(ecs.AssignPublicIpEnabled),
 					SecurityGroups: aws.StringSlice([]string{gid}),
-					Subnets:        aws.StringSlice(createSubnets(clusterName)),
+					Subnets:        []*string{sn},
 				},
 			},
 		}
@@ -252,7 +289,7 @@ func CreateECSService(sess *session.Session, d *Driver, name, clusterName string
 	if err := waitUntilTaskArn(clusterName, svc, 60); err != nil {
 		return store, err
 	}
-	ll.Info("TaskArns obtained")
+	ll.Info("TaskArns obtained after waiting")
 
 	// List tasks for Arns
 	listTaskInput := &ecs.ListTasksInput{
@@ -260,7 +297,7 @@ func CreateECSService(sess *session.Session, d *Driver, name, clusterName string
 	}
 	listTaskOutput, err := svc.ListTasks(listTaskInput)
 	store.TaskList = listTaskOutput
-	ll.Info("TaskList obtained")
+	ll.Info("TaskList obtained after listing")
 
 	if err = waitUntilTaskActive(clusterName, *listTaskOutput.TaskArns[0], svc, 60); err != nil {
 		return store, err
@@ -272,44 +309,40 @@ func CreateECSService(sess *session.Session, d *Driver, name, clusterName string
 
 // DeleteECSService ...
 // TODO(anoop): Handle SG
-func DeleteECSService(sess *session.Session, region, name, clusterName string, store ECSStore) (*ecs.DeleteServiceOutput, error) {
-	// svc := ecs.New(sess)
+func DeleteECSService(sess *session.Session, region, clusterName string) error {
+	svc := ecs.New(sess)
 
 	// TODO:(anoop) Stop services before deleting
 
-	// TODO(anoop): Figure-out a way to derive store to deRegisterTaskDefinition()
-
 	// De-Register task definition
-	// taskRev := strconv.FormatInt(*store.Task.TaskDefinition.Revision, 10)
-	// if _, err := deregisterTaskDefinition(svc, *store.Task.TaskDefinition.Family, taskRev); err != nil {
-	// 	return nil, err
-	// }
+	if _, err := deregisterTaskDefinition(svc, clusterName, ""); err != nil {
+		return err
+	}
 
 	// Delete the service
-	/*
-		input := &ecs.DeleteServiceInput{
-			Cluster: aws.String(clusterName),
-			Service: aws.String(name),
-			Force:   aws.Bool(true),
-		}
-		result, err := svc.DeleteService(input)
-		if err != nil {
-			return nil, err
-		}
-	*/
-	// Delete security group
-	/* TODO(anoop): Needs waiting for Ec2 instance shutdown
-	if err := deleteSecurityGroup(*store.SecurityGroup.GroupId, region); err != nil {
-		return nil, err
+
+	input := &ecs.DeleteServiceInput{
+		Cluster: aws.String(clusterName),
+		Service: aws.String(clusterName),
+		Force:   aws.Bool(true),
 	}
-	*/
-	return &ecs.DeleteServiceOutput{}, nil
+	if _, err := svc.DeleteService(input); err != nil {
+		return err
+	}
+
+	// Delete security group
+	// TODO(anoop): Needs waiting for Ec2 instance shutdown
+	if err := deleteSecurityGroup(clusterName, region); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // CreateEc2Instance ...
 // TODO(anoop): not idempotent
 // TODO(anoop): Wait for the chunkService
-func CreateEc2Instance(d *Driver, sg, masterIP, volID string, volSizeInGB int64, sess *session.Session) (*ec2.Reservation, error) {
+func CreateEc2Instance(d *CSIDriver, masterIP, volID string, volSizeInGB int64, sess *session.Session) (*ec2.Reservation, error) {
 	devName := "/dev/xvdh"
 	imageName := "amzn-ami-hvm-2018.03.0.20180412-x86_64-ebs" // ensure its in all regions
 	ll := d.log.WithFields(logrus.Fields{
@@ -337,6 +370,11 @@ func CreateEc2Instance(d *Driver, sg, masterIP, volID string, volSizeInGB int64,
 		ll.Info("Instance already exists, skipping creation")
 		return descInstanceOutput.Reservations[0], nil
 	}
+	// Create SG
+	sg, err := createSecurityGroup(volID+"-ec2", "Created for moosefs-csi-ec2", d.awsRegion, svc, masterIP)
+	if err != nil {
+		return nil, err
+	}
 
 	// Obtain the imageID
 	ll.Info("finding optimal Ec2 images")
@@ -361,13 +399,12 @@ func CreateEc2Instance(d *Driver, sg, masterIP, volID string, volSizeInGB int64,
 	userDataEncoded := encodedUserData(volSizeInGB, devName, masterIP)
 
 	riInput := &ec2.RunInstancesInput{
-		// KeyName:          aws.String("anoop_ireland"), // TODO(anoop): To be removed
 		ImageId:          imageID,
-		InstanceType:     aws.String(ec2.InstanceTypeT2Micro),
+		InstanceType:     aws.String(ec2.InstanceTypeT2Nano),
 		MinCount:         aws.Int64(1),
 		MaxCount:         aws.Int64(1),
 		UserData:         aws.String(userDataEncoded),
-		SecurityGroupIds: []*string{aws.String(sg)},
+		SecurityGroupIds: []*string{sg[0].GroupId},
 		TagSpecifications: []*ec2.TagSpecification{
 			{
 				ResourceType: aws.String("instance"),
@@ -392,6 +429,7 @@ func CreateEc2Instance(d *Driver, sg, masterIP, volID string, volSizeInGB int64,
 	ll.Info("Creating Ec2instance")
 	riOutput, err := svc.RunInstances(riInput)
 	if err != nil {
+		ll.Error("Unable to RunInstances: ", volID)
 		return nil, err
 	}
 	ll.Info("Ec2instance created")
@@ -401,7 +439,7 @@ func CreateEc2Instance(d *Driver, sg, masterIP, volID string, volSizeInGB int64,
 }
 
 // DeleteEc2Instance ...
-func DeleteEc2Instance(volID string, d *Driver, sess *session.Session) (*ec2.TerminateInstancesOutput, error) {
+func DeleteEc2Instance(volID string, d *CSIDriver, sess *session.Session) (*ec2.TerminateInstancesOutput, error) {
 
 	// Create an EC2 service client.
 	svc := ec2.New(sess)
@@ -432,7 +470,7 @@ func DeleteEc2Instance(volID string, d *Driver, sess *session.Session) (*ec2.Ter
 	if len(descOutput.Reservations) > 0 && len(descOutput.Reservations[0].Instances) > 0 {
 		terminateInput := &ec2.TerminateInstancesInput{
 			InstanceIds: []*string{
-				descOutput.Reservations[0].Instances[0].InstanceId,
+				descOutput.Reservations[0].Instances[0].InstanceId, // TODO:(anoop): delete all which mataches
 			},
 		}
 		terminateOutput, err = svc.TerminateInstances(terminateInput)
@@ -446,12 +484,12 @@ func DeleteEc2Instance(volID string, d *Driver, sess *session.Session) (*ec2.Ter
 	return terminateOutput, nil
 }
 
-func registerTaskDefinition(svc *ecs.ECS, mfsType MfsType) (*ecs.RegisterTaskDefinitionOutput, error) {
-	image := "quay.io/tuxera/" + mfsType.name + ":" + mfsType.version
+func registerTaskDefinition(svc *ecs.ECS, clusterName string) (*ecs.RegisterTaskDefinitionOutput, error) {
+	image := "quay.io/tuxera/" + mfsTypeMaster.name + ":" + mfsTypeMaster.version
 	input := &ecs.RegisterTaskDefinitionInput{
-		Family:                  aws.String(mfsType.name), // Task Name
-		Cpu:                     aws.String("256"),        // 0.25vCPU
-		Memory:                  aws.String("512"),        // 512MB
+		Family:                  aws.String(clusterName), // Task Name
+		Cpu:                     aws.String("256"),       // 0.25vCPU
+		Memory:                  aws.String("512"),       // 512MB
 		NetworkMode:             aws.String("awsvpc"),
 		RequiresCompatibilities: aws.StringSlice([]string{"FARGATE"}),
 		ContainerDefinitions: []*ecs.ContainerDefinition{
@@ -470,9 +508,12 @@ func registerTaskDefinition(svc *ecs.ECS, mfsType MfsType) (*ecs.RegisterTaskDef
 	return result, nil
 }
 
-func deregisterTaskDefinition(svc *ecs.ECS, taskName, revision string) (*ecs.DeregisterTaskDefinitionOutput, error) {
+func deregisterTaskDefinition(svc *ecs.ECS, name string, revision string) (*ecs.DeregisterTaskDefinitionOutput, error) {
+	if revision == "" {
+		revision = "1"
+	}
 	input := &ecs.DeregisterTaskDefinitionInput{
-		TaskDefinition: aws.String(taskName + ":" + revision),
+		TaskDefinition: aws.String(name + ":" + revision),
 	}
 	result, err := svc.DeregisterTaskDefinition(input)
 	if err != nil {
@@ -482,20 +523,20 @@ func deregisterTaskDefinition(svc *ecs.ECS, taskName, revision string) (*ecs.Der
 	return result, nil
 }
 
-func createSecurityGroup(name, desc, region string, sess *session.Session) ([]*ec2.SecurityGroup, error) {
-	// Create an EC2 service client.
-	svc := ec2.New(sess)
+func createSecurityGroup(name, desc, region string, svc *ec2.EC2, sourceIP string) ([]*ec2.SecurityGroup, error) {
+
+	// If chosen, give access
+	if sourceIP == "0.0.0.0" {
+		sourceIP += "/0"
+	} else {
+		sourceIP += "/32"
+	}
 
 	// get VPC ID
-	// Get a list of VPCs so we can associate the group with the first VPC.
-	result, err := svc.DescribeVpcs(nil)
+	vpc, err := getVpc(svc)
 	if err != nil {
 		return nil, err
 	}
-	if len(result.Vpcs) == 0 {
-		return nil, errors.New("No VPCs found to associate security group with")
-	}
-	vpcID := aws.StringValue(result.Vpcs[0].VpcId)
 
 	// check if already exists
 	input := &ec2.DescribeSecurityGroupsInput{
@@ -512,7 +553,7 @@ func createSecurityGroup(name, desc, region string, sess *session.Session) ([]*e
 				_, err := svc.CreateSecurityGroup(&ec2.CreateSecurityGroupInput{
 					GroupName:   aws.String(name),
 					Description: aws.String(desc),
-					VpcId:       aws.String(vpcID),
+					VpcId:       vpc.VpcId,
 				})
 				if err != nil {
 					return nil, err
@@ -525,15 +566,7 @@ func createSecurityGroup(name, desc, region string, sess *session.Session) ([]*e
 							SetFromPort(9419).
 							SetToPort(9421).
 							SetIpRanges([]*ec2.IpRange{
-								{CidrIp: aws.String("0.0.0.0/0")},
-							}),
-						(&ec2.IpPermission{}).
-							SetIpProtocol("tcp").
-							SetFromPort(22).
-							SetToPort(22).
-							SetIpRanges([]*ec2.IpRange{
-								(&ec2.IpRange{}).
-									SetCidrIp("0.0.0.0/0"),
+								{CidrIp: aws.String(sourceIP + "/32")},
 							}),
 					},
 				})
@@ -558,7 +591,7 @@ func createSecurityGroup(name, desc, region string, sess *session.Session) ([]*e
 	return grps.SecurityGroups, nil
 }
 
-func deleteSecurityGroup(groupID, region string) error {
+func deleteSecurityGroup(groupName, region string) error {
 	// create svc
 	sess, err := session.NewSession(&aws.Config{
 		Region: aws.String(region)},
@@ -570,7 +603,7 @@ func deleteSecurityGroup(groupID, region string) error {
 	svc := ec2.New(sess)
 
 	_, err = svc.DeleteSecurityGroup(&ec2.DeleteSecurityGroupInput{
-		GroupId: aws.String(groupID),
+		GroupName: aws.String(groupName),
 	})
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
@@ -585,14 +618,42 @@ func deleteSecurityGroup(groupID, region string) error {
 	return nil
 }
 
-func createSubnets(name string) []string {
-	// TODO(anoop): Dynamic
-	subnets := []string{"subnet-a47092ed"}
-	return subnets
+func getDefaultSubnet(svc *ec2.EC2) (*string, error) {
+
+	input := &ec2.DescribeSubnetsInput{
+		Filters: []*ec2.Filter{
+			{
+				Name: aws.String("state"),
+				Values: []*string{
+					aws.String("available"),
+				},
+			},
+			{
+				Name: aws.String("defaultForAz"),
+				Values: []*string{
+					aws.String("true"),
+				},
+			},
+		},
+	}
+
+	subnets, err := svc.DescribeSubnets(input)
+	if err != nil {
+		return nil, err
+	}
+	if len(subnets.Subnets) < 1 {
+		return nil, errors.New("Unable to find a default subnet in available state")
+	}
+	return subnets.Subnets[0].SubnetId, nil
 }
 
 // GetPublicIP4 ...
-func GetPublicIP4(sess *session.Session, region, clusterName, taskArn string) (*string, error) {
+func GetPublicIP4(sess *session.Session, d *CSIDriver, clusterName, taskArn string) (*string, error) {
+
+	ll := d.log.WithFields(logrus.Fields{
+		"method":      "GetPublicIP4",
+		"clusterName": clusterName,
+	})
 
 	svc := ecs.New(sess)
 
@@ -603,6 +664,7 @@ func GetPublicIP4(sess *session.Session, region, clusterName, taskArn string) (*
 
 	descTasks, err := svc.DescribeTasks(taskInput)
 	if err != nil {
+		ll.Error("Unable to DescribeTasks for task: ", taskArn)
 		return nil, err
 	}
 
@@ -614,6 +676,7 @@ func GetPublicIP4(sess *session.Session, region, clusterName, taskArn string) (*
 	//		},
 	ni, err := extractNI(descTasks.Tasks[0].Attachments) // extract networkInterfaceId
 	if err != nil {
+		ll.Error("Unable to extract networkInterfaceId for task: ", taskArn)
 		return nil, err
 	}
 
@@ -625,6 +688,7 @@ func GetPublicIP4(sess *session.Session, region, clusterName, taskArn string) (*
 	}
 	descNIs, err := svcEc2.DescribeNetworkInterfaces(input)
 	if err != nil {
+		ll.Error("Unable to DescribeNetworkInterfaces for NetworkInterfaceId: ", ni)
 		return nil, err
 	}
 
@@ -663,6 +727,20 @@ func extractNI(attchmts []*ecs.Attachment) (string, error) {
 }
 
 // Misc methods
+
+// Get vpcID
+func getVpc(svc *ec2.EC2) (*ec2.Vpc, error) {
+	// Get a list of VPCs so we can associate the group with the first VPC.
+	result, err := svc.DescribeVpcs(nil)
+	if err != nil {
+		return nil, err
+	}
+	if len(result.Vpcs) == 0 {
+		return nil, errors.New("No VPCs found to associate security group with")
+	}
+	return result.Vpcs[0], nil
+
+}
 
 func waitUntilTaskArn(clusterName string, svc *ecs.ECS, waitSecs time.Duration) error {
 	listInput := &ecs.ListTasksInput{
@@ -802,90 +880,3 @@ chmod a+x init.sh
 	userDataStr := userData(strconv.FormatInt(volSize, 10), devName, masterIP)
 	return base64.URLEncoding.EncodeToString([]byte(userDataStr))
 }
-
-/*
-func main() {
-	CreateECS(
-        "eu-west-1",
-		"my_cluster",
-}
-*/
-
-/*
-sess, err := session.NewSession(&aws.Config{Region: aws.String("us-west-2")})
-*/
-
-/*
-sess, err := session.NewSession(&aws.Config{
-    Region:      aws.String("us-west-2"),
-    Credentials: credentials.NewSharedCredentials("", "test-account"),
-})
-*/
-
-/*
-svc := ecs.New(session.New())
-input := &ecs.CreateClusterInput{
-    ClusterName: aws.String("my_cluster"),
-}
-
-result, err := svc.CreateCluster(input)
-if err != nil {
-    if aerr, ok := err.(awserr.Error); ok {
-        switch aerr.Code() {
-        case ecs.ErrCodeServerException:
-            fmt.Println(ecs.ErrCodeServerException, aerr.Error())
-        case ecs.ErrCodeClientException:
-            fmt.Println(ecs.ErrCodeClientException, aerr.Error())
-        case ecs.ErrCodeInvalidParameterException:
-            fmt.Println(ecs.ErrCodeInvalidParameterException, aerr.Error())
-        default:
-            fmt.Println(aerr.Error())
-        }
-    } else {
-        // Print the error, cast err to awserr.Error to get the Code and
-        // Message from an error.
-        fmt.Println(err.Error())
-    }
-    return
-}
-
-fmt.Println(result)
-*/
-
-/*
-
-svc := ec2.New(session.New(&aws.Config{Region: aws.String("us-west-2")}))
-    // Specify the details of the instance that you want to create.
-    runResult, err := svc.RunInstances(&ec2.RunInstancesInput{
-        // An Amazon Linux AMI ID for t2.micro instances in the us-west-2 region
-        ImageId:      aws.String("ami-e7527ed7"),
-        InstanceType: aws.String("t2.micro"),
-        MinCount:     aws.Int64(1),
-        MaxCount:     aws.Int64(1),
-    })
-
-    if err != nil {
-        log.Println("Could not create instance", err)
-        return
-    }
-
-    log.Println("Created instance", *runResult.Instances[0].InstanceId)
-
-    // Add tags to the created instance
-    _ , errtag := svc.CreateTags(&ec2.CreateTagsInput{
-        Resources: []*string{runResult.Instances[0].InstanceId},
-        Tags: []*ec2.Tag{
-            {
-                Key:   aws.String("Name"),
-                Value: aws.String("MyFirstInstance"),
-            },
-        },
-    })
-    if errtag != nil {
-        log.Println("Could not create tags for instance", runResult.Instances[0].InstanceId, errtag)
-        return
-    }
-
-	log.Println("Successfully tagged instance")
-
-*/

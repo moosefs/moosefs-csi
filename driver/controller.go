@@ -1,5 +1,5 @@
 /*
-   Copyright 2018 Tuxera Oy. All Rights Reserved.
+   Copyright 2019 Tuxera Oy. All Rights Reserved.
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -20,8 +20,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/aws/aws-sdk-go/service/ec2"
-	csi "github.com/container-storage-interface/spec/lib/go/csi/v0"
+	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -40,9 +39,21 @@ const (
 	defaultVolumeSizeInGB = 16
 )
 
+var (
+	// To start with support a single node to be attached to a single node
+	// in read/write mode. This corresponds to `accessModes.ReadWriteOnce` in a
+	// PVC resource on Kubernets
+	supportedAccessMode = &csi.VolumeCapability_AccessMode{
+		Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+	}
+	moosefsVolumeCapability = &csi.VolumeCapability_MountVolume{
+		FsType: "moosefs",
+	}
+)
+
 // CreateVolume creates a new volume from the given request. The function is
 // idempotent.
-func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
+func (d *CSIDriver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
 	if req.Name == "" {
 		return nil, status.Error(codes.InvalidArgument, "CreateVolume Name must be provided")
 	}
@@ -67,7 +78,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 
 	ll.WithField("volume_req", nil).Info("creating volume")
 
-	// TODO(Anoop): Also include moosefs docker on Azure, GCP
+	// Generic cloud CreateVol
 	volOutput, err := CreateVol(volumeName, d, size)
 	if err != nil {
 		return nil, err
@@ -75,9 +86,19 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 
 	resp := &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
-			Id:            volOutput.VolID,
-			CapacityBytes: size,
-			Attributes:    map[string]string{"instanceID": volOutput.InstanceID},
+			VolumeId:      volumeName,
+			CapacityBytes: size * GB,
+			AccessibleTopology: []*csi.Topology{
+				{
+					Segments: map[string]string{
+						"region": d.awsRegion,
+					},
+				},
+			},
+			VolumeContext: map[string]string{
+				"instanceID": volOutput.InstanceID,
+				"endpoint":   volOutput.Endpoint,
+			},
 		},
 	}
 
@@ -86,7 +107,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 }
 
 // DeleteVolume deletes the given volume. The function is idempotent.
-func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
+func (d *CSIDriver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
 	if req.VolumeId == "" {
 		return nil, status.Error(codes.InvalidArgument, "DeleteVolume Volume ID must be provided")
 	}
@@ -97,8 +118,8 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 	})
 	ll.Info("delete volume called")
 
-	// TODO(Anoop): Also include moosefs docker on Azure, GCP
-	err := AWSDeleteVol(req.VolumeId, d)
+	// Generic cloud.DeleteVol
+	err := DeleteVol(req.VolumeId, d)
 	if err != nil {
 		return nil, err
 	}
@@ -108,9 +129,9 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 }
 
 // ControllerPublishVolume attaches the given volume to the node
-func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.ControllerPublishVolumeRequest) (*csi.ControllerPublishVolumeResponse, error) {
+func (d *CSIDriver) ControllerPublishVolume(ctx context.Context, req *csi.ControllerPublishVolumeRequest) (*csi.ControllerPublishVolumeResponse, error) {
 	if req.VolumeId == "" {
-		return nil, status.Error(codes.InvalidArgument, "ControllerPublishVolume Volume ID must be provided")
+		return nil, status.Error(codes.InvalidArgument, "ControllerPublishVolume VolumeName must be provided")
 	}
 
 	if req.NodeId == "" {
@@ -121,33 +142,30 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 		return nil, status.Error(codes.InvalidArgument, "ControllerPublishVolume Volume capability must be provided")
 	}
 
+	if req.VolumeContext["endpoint"] == "" {
+		return nil, status.Error(codes.InvalidArgument, "ControllerPublishVolume Endpoint must be provided")
+	}
+
 	ll := d.log.WithFields(logrus.Fields{
 		"volume_id":  req.VolumeId,
 		"node_id":    req.NodeId,
-		"instanceID": req.VolumeAttributes["instanceID"],
+		"instanceID": req.VolumeContext["instanceID"],
+		"endpoint":   req.VolumeContext["endpoint"],
 		"method":     "controller_publish_volume",
 	})
 	ll.Info("controller publish volume called")
 
-	// TODO(Anoop): For Azure and GCP
-	// Create AWS Session
-	sess, err := CreateAWSSession(d)
-	if err != nil {
+	// Generic cloud.ControlllerPublishVol
+	if err := ControllerPublishVol(d, req); err != nil {
 		return nil, err
 	}
-	svc := ec2.New(sess)
-	// Wait for instances to be up
-	if err := waitUntilInstanceRunning(req.VolumeAttributes["instanceID"], svc, 60); err != nil {
-		return nil, err
-	}
-	ll.Info("Ec2instance running")
 
 	ll.Info("volume is attached")
 	return &csi.ControllerPublishVolumeResponse{}, nil
 }
 
 // ControllerUnpublishVolume deattaches the given volume from the node
-func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.ControllerUnpublishVolumeRequest) (*csi.ControllerUnpublishVolumeResponse, error) {
+func (d *CSIDriver) ControllerUnpublishVolume(ctx context.Context, req *csi.ControllerUnpublishVolumeRequest) (*csi.ControllerUnpublishVolumeResponse, error) {
 	if req.VolumeId == "" {
 		return nil, status.Error(codes.InvalidArgument, "ControllerPublishVolume Volume ID must be provided")
 	}
@@ -159,9 +177,10 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 	})
 	ll.Info("controller unpublish volume called")
 
-	// TODO(Anoop): check what needs to be done more
-	// Moosefs being ditributed filesystem, nothing needed to be done
-	// detachVol()
+	// Generic cloud.ControllerUnPublishVol
+	if err := ControllerUnPublishVol(d, req); err != nil {
+		return nil, err
+	}
 
 	ll.Info("volume is detached")
 	return &csi.ControllerUnpublishVolumeResponse{}, nil
@@ -169,7 +188,7 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 
 // ValidateVolumeCapabilities checks whether the volume capabilities requested
 // are supported.
-func (d *Driver) ValidateVolumeCapabilities(ctx context.Context, req *csi.ValidateVolumeCapabilitiesRequest) (*csi.ValidateVolumeCapabilitiesResponse, error) {
+func (d *CSIDriver) ValidateVolumeCapabilities(ctx context.Context, req *csi.ValidateVolumeCapabilitiesRequest) (*csi.ValidateVolumeCapabilitiesResponse, error) {
 	if req.VolumeId == "" {
 		return nil, status.Error(codes.InvalidArgument, "ValidateVolumeCapabilities Volume ID must be provided")
 	}
@@ -180,7 +199,7 @@ func (d *Driver) ValidateVolumeCapabilities(ctx context.Context, req *csi.Valida
 
 	var vcaps []*csi.VolumeCapability_AccessMode
 	for _, mode := range []csi.VolumeCapability_AccessMode_Mode{
-		// DO currently only support a single node to be attached to a single
+		// currently only support a single node to be attached to a single
 		// node in read/write mode
 		csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER,
 	} {
@@ -195,28 +214,14 @@ func (d *Driver) ValidateVolumeCapabilities(ctx context.Context, req *csi.Valida
 	})
 	ll.Info("validate volume capabilities called")
 
-	hasSupport := func(mode csi.VolumeCapability_AccessMode_Mode) bool {
-		for _, m := range vcaps {
-			if mode == m.Mode {
-				return true
-			}
-		}
-		return false
-	}
-
 	resp := &csi.ValidateVolumeCapabilitiesResponse{
-		Supported: false,
-	}
-
-	for _, cap := range req.VolumeCapabilities {
-		// cap.AccessMode.Mode
-		if hasSupport(cap.AccessMode.Mode) {
-			resp.Supported = true
-		} else {
-			// we need to make sure all capabilities are supported. Revert back
-			// in case we have a cap that is supported, but is invalidated now
-			resp.Supported = false
-		}
+		Confirmed: &csi.ValidateVolumeCapabilitiesResponse_Confirmed{
+			VolumeCapabilities: []*csi.VolumeCapability{
+				{
+					AccessMode: supportedAccessMode,
+				},
+			},
+		},
 	}
 
 	ll.WithField("response", resp).Info("supported capabilities")
@@ -224,7 +229,7 @@ func (d *Driver) ValidateVolumeCapabilities(ctx context.Context, req *csi.Valida
 }
 
 // ListVolumes returns a list of all requested volumes
-func (d *Driver) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (*csi.ListVolumesResponse, error) {
+func (d *CSIDriver) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (*csi.ListVolumesResponse, error) {
 	ll := d.log.WithFields(logrus.Fields{
 		"req_starting_token": req.StartingToken,
 		"method":             "list_volumes",
@@ -234,7 +239,7 @@ func (d *Driver) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (
 	var entries []*csi.ListVolumesResponse_Entry
 	entries = append(entries, &csi.ListVolumesResponse_Entry{
 		Volume: &csi.Volume{
-			Id:            "", // TODO(anoop): Get volume IDS somehow
+			VolumeId:      "", // TODO(anoop): Get volume IDS somehow
 			CapacityBytes: 1000 * GB,
 		},
 	})
@@ -250,8 +255,7 @@ func (d *Driver) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (
 }
 
 // GetCapacity returns the capacity of the storage pool
-func (d *Driver) GetCapacity(ctx context.Context, req *csi.GetCapacityRequest) (*csi.GetCapacityResponse, error) {
-	// TODO(arslan): check if we can provide this information somehow
+func (d *CSIDriver) GetCapacity(ctx context.Context, req *csi.GetCapacityRequest) (*csi.GetCapacityResponse, error) {
 	d.log.WithFields(logrus.Fields{
 		"params": req.Parameters,
 		"method": "get_capacity",
@@ -260,7 +264,7 @@ func (d *Driver) GetCapacity(ctx context.Context, req *csi.GetCapacityRequest) (
 }
 
 // ControllerGetCapabilities returns the capabilities of the controller service.
-func (d *Driver) ControllerGetCapabilities(ctx context.Context, req *csi.ControllerGetCapabilitiesRequest) (*csi.ControllerGetCapabilitiesResponse, error) {
+func (d *CSIDriver) ControllerGetCapabilities(ctx context.Context, req *csi.ControllerGetCapabilitiesRequest) (*csi.ControllerGetCapabilitiesResponse, error) {
 	newCap := func(cap csi.ControllerServiceCapability_RPC_Type) *csi.ControllerServiceCapability {
 		return &csi.ControllerServiceCapability{
 			Type: &csi.ControllerServiceCapability_Rpc{
@@ -293,7 +297,7 @@ func (d *Driver) ControllerGetCapabilities(ctx context.Context, req *csi.Control
 }
 
 // waitAction waits until the given action for the volume is completed
-func (d *Driver) waitAction(ctx context.Context, volumeId string, actionId int) error {
+func (d *CSIDriver) waitAction(ctx context.Context, volumeId string, actionId int) error {
 	ll := d.log.WithFields(logrus.Fields{
 		"volume_id": volumeId,
 		"action_id": actionId,
@@ -307,17 +311,17 @@ func (d *Driver) waitAction(ctx context.Context, volumeId string, actionId int) 
 }
 
 // v0.3
-func (d *Driver) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequest) (*csi.CreateSnapshotResponse, error) {
+func (d *CSIDriver) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequest) (*csi.CreateSnapshotResponse, error) {
 
 	return &csi.CreateSnapshotResponse{}, nil
 }
 
-func (d *Driver) DeleteSnapshot(ctx context.Context, req *csi.DeleteSnapshotRequest) (*csi.DeleteSnapshotResponse, error) {
+func (d *CSIDriver) DeleteSnapshot(ctx context.Context, req *csi.DeleteSnapshotRequest) (*csi.DeleteSnapshotResponse, error) {
 
 	return &csi.DeleteSnapshotResponse{}, nil
 }
 
-func (d *Driver) ListSnapshots(ctx context.Context, req *csi.ListSnapshotsRequest) (*csi.ListSnapshotsResponse, error) {
+func (d *CSIDriver) ListSnapshots(ctx context.Context, req *csi.ListSnapshotsRequest) (*csi.ListSnapshotsResponse, error) {
 
 	return &csi.ListSnapshotsResponse{}, nil
 }
