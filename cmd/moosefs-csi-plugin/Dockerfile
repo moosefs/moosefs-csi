@@ -15,7 +15,10 @@
 FROM ubuntu:18.04
 
 # Install wget, lsb-release and curl
-RUN apt-get update && apt-get install -y wget lsb-release curl fuse libfuse2 tree ca-certificates e2fsprogs gnupg2
+RUN apt update && \
+    apt install -y wget lsb-release curl fuse libfuse2 tree ca-certificates e2fsprogs gnupg2 && \
+    # security updates
+    apt install -y apt systemd
 
 # Add key
 RUN wget -O - http://ppa.moosefs.com/moosefs.key | apt-key add -

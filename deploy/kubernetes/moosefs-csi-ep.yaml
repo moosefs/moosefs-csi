@@ -299,7 +299,7 @@ spec:
               mountPath: /var/lib/csi/sockets/pluginproxy/
         # Moosefs Plugin
         - name: moosefs-csi-plugin
-          image: quay.io/tuxera/moosefs-csi-plugin:dev-0.0.4-36
+          image: quay.io/tuxera/moosefs-csi-plugin:0.0.4
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
             - "--topology=$(MFS_TOPOLOGY)"
@@ -364,7 +364,7 @@ spec:
             capabilities:
               add: ["SYS_ADMIN"]
             allowPrivilegeEscalation: true
-          image: quay.io/tuxera/moosefs-csi-plugin:dev-0.0.4-36
+          image: quay.io/tuxera/moosefs-csi-plugin:0.0.4
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
             - "--topology=$(MFS_TOPOLOGY)"
