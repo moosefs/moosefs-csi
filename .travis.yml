@@ -1,0 +1,16 @@
+language: go
+
+go:
+  - 1.11.x
+
+before_script:
+  - export GOBIN=~/bin GOPATH=~/ PATH=$PATH:$GOBIN
+  - mkdir -p $GOPATH/src $GOBIN
+  - export PATH=$PATH:$GOBIN
+  - echo $(pwd)
+  - mv ../moosefs-csi $GOPATH/src
+  - curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
+  - dep ensure
+
+script:
+  - make test
