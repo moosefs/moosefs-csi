@@ -1,0 +1,12 @@
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: my-moosefs-mount-pvc
+spec:
+  storageClassName: ""               # empty Storage Class
+  volumeName: my-moosefs-mount-pv
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi                   # at least as much as in PV, does not have any effect

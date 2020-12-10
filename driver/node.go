@@ -18,132 +18,58 @@ package driver
 
 import (
 	"context"
-	"path/filepath"
+	"fmt"
+	"io/ioutil"
+	"math/rand"
+	"path"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-const (
-	diskIDPath   = "/dev/disk/by-id"
-	diskDOPrefix = "scsi-0DO_Volume_"
-)
+type NodeService struct {
+	csi.NodeServer
+	*IdentityService
+	*PluginService
 
-// NodeStageVolume mounts the volume to a staging path on the node. This is
-// called by the CO before NodePublishVolume and is used to temporary mount the
-// volume to a staging path. Once mounted, NodePublishVolume will make sure to
-// mount it to the appropriate path
-func (d *CSIDriver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRequest) (*csi.NodeStageVolumeResponse, error) {
-	d.log.Info("node stage volume called")
-	if req.VolumeId == "" {
-		return nil, status.Error(codes.InvalidArgument, "NodeStageVolume Volume ID must be provided")
-	}
-
-	if req.VolumeContext["endpoint"] == "" {
-		return nil, status.Error(codes.InvalidArgument, "NodeStageVolume Endpoint must be provided")
-	}
-
-	if req.StagingTargetPath == "" {
-		return nil, status.Error(codes.InvalidArgument, "NodeStageVolume Staging Target Path must be provided")
-	}
-
-	if req.VolumeCapability == nil {
-		return nil, status.Error(codes.InvalidArgument, "NodeStageVolume Volume Capability must be provided")
-	}
-
-	source := req.VolumeContext["endpoint"]
-	target := req.StagingTargetPath
-
-	mnt := req.VolumeCapability.GetMount()
-	options := mnt.MountFlags
-
-	fsType := "moosefs"
-	/* 	if mnt.FsType != "" {
-	   		fsType = mnt.FsType
-	   	}
-	*/
-	ll := d.log.WithFields(logrus.Fields{
-		"volume_id":           req.VolumeId,
-		"endpoint":            req.VolumeContext["endpoint"],
-		"staging_target_path": req.StagingTargetPath,
-		"source":              source,
-		"target":              target,
-		"fsType":              fsType,
-		"mount_options":       options,
-		"method":              "node_stage_volume",
-	})
-
-	ll.Info("mounting the volume for staging")
-
-	mounted, err := d.mounter.IsMounted(source, target)
-	if err != nil {
-		return nil, err
-	}
-
-	if !mounted {
-		if err := d.mounter.Mount(source, target, fsType, options...); err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
-		}
-	} else {
-		ll.Info("source device is already mounted to the target path")
-	}
-
-	ll.Info("formatting and mounting stage volume is finished")
-	return &csi.NodeStageVolumeResponse{}, nil
+	mountPointsCount int
+	mountPoints      []*MfsMountPoint
+	nodeID           string
+	mfslog           *MfsLog
 }
 
-// NodeUnstageVolume unstages the volume from the staging path
-func (d *CSIDriver) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstageVolumeRequest) (*csi.NodeUnstageVolumeResponse, error) {
-	if req.VolumeId == "" {
-		return nil, status.Error(codes.InvalidArgument, "NodeUnstageVolume Volume ID must be provided")
+func (ns *NodeService) Register(srv *grpc.Server) {
+	log.Infof("NodeService::Register")
+	ns.IdentityService.Register(srv)
+	csi.RegisterNodeServer(srv, ns)
+}
+
+func NewNodeService(mfsmaster, rootDir, pluginDataDir, nodeID string, mountPointsCount int) (*NodeService, error) {
+	ns := &NodeService{
+		mountPointsCount: mountPointsCount,
+		mountPoints:      make([]*MfsMountPoint, mountPointsCount),
+		nodeID:           nodeID,
+		mfslog: &MfsLog{
+			logfile: path.Join(fmt.Sprintf("/mnt/mount_node_%s_%02d", nodeID, 0),
+				pluginDataDir, fmt.Sprintf("logz_%s", nodeID)),
+			active: false,
+		},
 	}
-
-	if req.StagingTargetPath == "" {
-		return nil, status.Error(codes.InvalidArgument, "NodeUnstageVolume Staging Target Path must be provided")
-	}
-
-	ll := d.log.WithFields(logrus.Fields{
-		"volume_id":           req.VolumeId,
-		"staging_target_path": req.StagingTargetPath,
-		"method":              "node_unstage_volume",
-	})
-	ll.Info("node unstage volume called")
-
-	source := getDiskSource(req.VolumeId)
-	mounted, err := d.mounter.IsMounted(source, req.StagingTargetPath)
-	if err != nil {
-		return nil, err
-	}
-
-	if mounted {
-		ll.Info("unmounting the staging target path")
-		err := d.mounter.UMount(req.StagingTargetPath)
-		if err != nil {
+	for i := 0; i < mountPointsCount; i++ {
+		ns.mountPoints[i], _ = NewMfsMountPoint(mfsmaster, rootDir, fmt.Sprintf("/mnt/mount_node_%s_%02d", nodeID, i), pluginDataDir)
+		if err := ns.mountPoints[i].Mount(); err != nil {
 			return nil, err
 		}
-	} else {
-		ll.Info("staging target path is already unmounted")
 	}
-
-	ll.Info("unmounting stage volume is finished")
-	return &csi.NodeUnstageVolumeResponse{}, nil
+	return ns, nil
 }
 
-// NodePublishVolume mounts the volume mounted to the staging path to the target path
-func (d *CSIDriver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error) {
-	d.log.Info("node publish volume called")
+func (ns *NodeService) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error) {
 	if req.VolumeId == "" {
 		return nil, status.Error(codes.InvalidArgument, "NodePublishVolume Volume ID must be provided")
-	}
-
-	if req.VolumeContext["endpoint"] == "" {
-		return nil, status.Error(codes.InvalidArgument, "NodePublishVolume Endpoint must be provided")
-	}
-
-	if req.StagingTargetPath == "" {
-		return nil, status.Error(codes.InvalidArgument, "NodePublishVolume Staging Target Path must be provided")
 	}
 
 	if req.TargetPath == "" {
@@ -154,55 +80,47 @@ func (d *CSIDriver) NodePublishVolume(ctx context.Context, req *csi.NodePublishV
 		return nil, status.Error(codes.InvalidArgument, "NodePublishVolume Volume Capability must be provided")
 	}
 
-	source := req.StagingTargetPath
+	log.Infof("NodeServer::NodePublishVolume (volume_id %s, target_path %s, volumecontext %v)", req.VolumeId, req.TargetPath, req.GetVolumeContext())
+	ns.mfslog.Log(fmt.Sprintf("NodeServer::NodePublishVolume (volume_id %s, target_path %s)", req.VolumeId, req.TargetPath))
+
+	source, ok := req.GetVolumeContext()["VolumeDir"]
+	log.Infof("NodeService::NodePublishVolume -- source here is %s", source)
+
+	if !ok {
+		sub_source, ok := req.GetVolumeContext()["mfsSubFolder"]
+		log.Infof("NodeService::NodePublishVolume -- sub_source here is %s", sub_source)
+		if !ok {
+			log.Errorf("NodeService::NodePublishVolume -- VolumeContext doesn't contain 'VolumeDir' and 'mfsSubFolder' fields. Aborting...")
+			return nil, status.Error(codes.InvalidArgument, "NodePublishVolume 'VolumeDir' and 'mfsSubFolder' not found in VolumeContext")
+		}
+		source = sub_source
+	} else {
+		log.Infof("NodeService::NodePublishVolume -- source was found and idk (%s)", source)
+		_, ok := req.GetVolumeContext()["mfsSubFolder"]
+		if ok {
+			log.Errorf("NodeService::NodePublishVolume -- VolumeContext contain both 'VolumeDir' and 'mfsSubFolder' fields. Aborting...")
+			return nil, status.Error(codes.Internal, "NodePublishVolume both 'VolumeDir' and 'mfsSubFolder' found in VolumeContext")
+		}
+	}
+	log.Infof("NodeService::NodePublishVolume -- source here is %s", source)
+
 	target := req.TargetPath
-
-	mnt := req.VolumeCapability.GetMount()
-	options := mnt.MountFlags
-
-	// Perform a bind mount to the full path to allow duplicate mounts of the same PD.
-	options = append(options, "bind")
+	options := req.VolumeCapability.GetMount().MountFlags
 	if req.Readonly {
 		options = append(options, "ro")
 	}
 
-	fsType := "moosefs"
-	/* 	if mnt.FsType != "" {
-	   		fsType = mnt.FsType
-	   	}
-	*/
-	ll := d.log.WithFields(logrus.Fields{
-		"volume_id":     req.VolumeId,
-		"endpoint":      req.VolumeContext["endpoint"],
-		"source":        source,
-		"target":        target,
-		"fsType":        fsType,
-		"mount_options": options,
-		"method":        "node_publish_volume",
-	})
-
-	// we can only check if target is mounted with the diskSource directly.
-	// The staging target path (which is a directory itself) won't work in this case
-	mounted, err := d.mounter.IsMounted(req.VolumeContext["endpoint"], target)
-	if err != nil {
-		return nil, err
+	if err := ns.bindMount(source, target, options...); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	if !mounted {
-		ll.Info("mounting the volume")
-		if err := d.mounter.Mount(source, target, fsType, options...); err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
-		}
-	} else {
-		ll.Info("volume is already mounted")
-	}
-
-	ll.Info("bind mounting the volume is finished")
 	return &csi.NodePublishVolumeResponse{}, nil
 }
 
-// NodeUnpublishVolume unmounts the volume from the target path
-func (d *CSIDriver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublishVolumeRequest) (*csi.NodeUnpublishVolumeResponse, error) {
+func (ns *NodeService) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublishVolumeRequest) (*csi.NodeUnpublishVolumeResponse, error) {
+	log.Infof("NodeServer::NodeUnpublishVolume (volume_id %s, target_path %s)", req.VolumeId, req.TargetPath)
+	ns.mfslog.Log(fmt.Sprintf("NodeServer::NodeUnpublishVolume (volume_id %s, target_path %s)", req.VolumeId, req.TargetPath))
+
 	if req.VolumeId == "" {
 		return nil, status.Error(codes.InvalidArgument, "NodeUnpublishVolume Volume ID must be provided")
 	}
@@ -211,75 +129,127 @@ func (d *CSIDriver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpubl
 		return nil, status.Error(codes.InvalidArgument, "NodeUnpublishVolume Target Path must be provided")
 	}
 
-	ll := d.log.WithFields(logrus.Fields{
-		"volume_id":   req.VolumeId,
-		"target_path": req.TargetPath,
-		"method":      "node_unpublish_volume",
-	})
-	ll.Info("node unpublish volume called")
-
-	mounted, err := d.mounter.IsMounted(req.VolumeId, req.TargetPath)
+	err := ns.unbindMount(req.TargetPath)
 	if err != nil {
-		return nil, err
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	if mounted {
-		ll.Info("unmounting the target path")
-		err := d.mounter.UMount(req.TargetPath)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		ll.Info("target path is already unmounted")
-	}
-
-	ll.Info("unmounting volume is finished")
 	return &csi.NodeUnpublishVolumeResponse{}, nil
 }
 
-// NodeGetId returns the unique id of the node. This is used so the CO knows where to place the
-// workload. The result of this function will be used by the CO in ControllerPublishVolume.
-func (d *CSIDriver) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error) {
-	d.log.WithField("method", "node_get_info").Info("node get info called")
+func (ns *NodeService) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error) {
+	log.Infof("NodeServer::NodeGetInfo")
+
 	return &csi.NodeGetInfoResponse{
-		NodeId: d.nodeID,
-		AccessibleTopology: &csi.Topology{
-			Segments: map[string]string{
-				"region": d.awsRegion,
-			},
-		},
+		NodeId: ns.nodeID,
 	}, nil
 }
 
-// NodeGetCapabilities returns the supported capabilities of the node server
-func (d *CSIDriver) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetCapabilitiesRequest) (*csi.NodeGetCapabilitiesResponse, error) {
-	// currently there is a single NodeServer capability according to the spec
-	nscap := &csi.NodeServiceCapability{
-		Type: &csi.NodeServiceCapability_Rpc{
-			Rpc: &csi.NodeServiceCapability_RPC{
-				Type: csi.NodeServiceCapability_RPC_STAGE_UNSTAGE_VOLUME,
+func (ns *NodeService) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetCapabilitiesRequest) (*csi.NodeGetCapabilitiesResponse, error) {
+	log.Infof("NodeServer::NodeGetCapabilities")
+
+	var caps []*csi.NodeServiceCapability
+	for _, capa := range []csi.NodeServiceCapability_RPC_Type{
+		//csi.NodeServiceCapability_RPC_GET_VOLUME_STATS,
+		// csi.NodeServiceCapability_RPC_VOLUME_CONDITION,
+		//		csi.NodeServiceCapability_RPC_STAGE_UNSTAGE_VOLUME,
+	} {
+		caps = append(caps, &csi.NodeServiceCapability{
+			Type: &csi.NodeServiceCapability_Rpc{
+				Rpc: &csi.NodeServiceCapability_RPC{
+					Type: capa,
+				},
 			},
-		},
+		})
 	}
 
-	d.log.WithFields(logrus.Fields{
-		"node_capabilities": nscap,
-		"method":            "node_get_capabilities",
-	}).Info("node get capabilities called")
 	return &csi.NodeGetCapabilitiesResponse{
-		Capabilities: []*csi.NodeServiceCapability{
-			nscap,
-		},
+		Capabilities: caps,
 	}, nil
 }
 
-// NodeGetVolumeStats impl
-func (d *CSIDriver) NodeGetVolumeStats(ctx context.Context, req *csi.NodeGetVolumeStatsRequest) (*csi.NodeGetVolumeStatsResponse, error) {
-	return &csi.NodeGetVolumeStatsResponse{}, nil
+func (ns *NodeService) NodeGetVolumeStats(ctx context.Context, req *csi.NodeGetVolumeStatsRequest) (*csi.NodeGetVolumeStatsResponse, error) {
+	log.Infof("NodeServer::NodeGetVolumeStats (volume_id %s, volume_path %s, staging_path %s)",
+		req.VolumeId, req.VolumePath, req.StagingTargetPath)
+
+	if req.VolumeId == "" {
+		return nil, status.Error(codes.InvalidArgument, "NodeGetVolumeStats: VolumeId must be provided")
+	}
+	if req.VolumePath == "" {
+		return nil, status.Error(codes.InvalidArgument, "NodeGetVolumeStats: VolumePath must be provided")
+	}
+
+	cond := false
+	_, err := ioutil.ReadDir(req.VolumePath)
+	if err != nil {
+		log.Infof("%s %s corrupted", req.VolumeId, req.VolumePath)
+		cond = true
+	} else {
+		log.Infof("%s %s NOT corrupted", req.VolumeId, req.VolumePath)
+	}
+	return &csi.NodeGetVolumeStatsResponse{VolumeCondition: &csi.VolumeCondition{
+		Abnormal: cond,
+		Message:  "",
+	}}, nil
 }
 
-// getDiskSource returns the absolute path of the attached volume for the given
-// DO volume name
-func getDiskSource(volumeName string) string {
-	return filepath.Join(diskIDPath, diskDOPrefix+volumeName)
+func (ns *NodeService) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRequest) (*csi.NodeStageVolumeResponse, error) {
+	log.Info("NodeServer::NodeStageVolume")
+	ns.mfslog.Log(fmt.Sprintf("NodeServer::NodeStageVolume (volume_id %s)", req.VolumeId))
+	return &csi.NodeStageVolumeResponse{}, nil
+	//	return nil, status.Errorf(codes.Unimplemented, "method NodeStageVolume not implemented")
+}
+
+func (ns *NodeService) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstageVolumeRequest) (*csi.NodeUnstageVolumeResponse, error) {
+	log.Info("NodeServer::NodeUnstageVolume")
+	ns.mfslog.Log(fmt.Sprintf("NodeServer::NodeUnstageVolume (volume_id %s)", req.VolumeId))
+
+	return &csi.NodeUnstageVolumeResponse{}, nil
+	//	return nil, status.Errorf(codes.Unimplemented, "method NodeUnstageVolume not implemented")
+}
+
+func (ns *NodeService) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolumeRequest) (*csi.NodeExpandVolumeResponse, error) {
+	log.Info("NodeServer::NodeExpandVolume")
+	return nil, status.Errorf(codes.Unimplemented, "method NodeExpandVolume not implemented")
+}
+
+//////////////
+
+func (ns *NodeService) bindMount(mfsSource string, target string, options ...string) error {
+	mounter := Mounter{}
+
+	ismounted, err := mounter.IsMounted(target)
+	if err != nil {
+		return err
+	}
+	if !ismounted {
+		mountId := rand.Intn(ns.mountPointsCount)
+		source := path.Join(ns.mountPoints[mountId].hostPath, mfsSource)
+		log.Infof("NodeService::bindMount -- mounting %s (%s + %s) to %s", source, ns.mountPoints[mountId].hostPath, mfsSource, target)
+		if err := mounter.Mount(source, target, fsType, append(options, "bind")...); err != nil {
+			return err
+		}
+	} else {
+		log.Infof("NodeService::bindMount -- target %s is already mounted", target)
+	}
+	return nil
+}
+
+func (ns *NodeService) unbindMount(target string) error {
+	mounter := Mounter{}
+
+	mounted, err := mounter.IsMounted(target)
+	if err != nil {
+		return err
+	}
+
+	if mounted {
+		err := mounter.UMount(target)
+		if err != nil {
+			return err
+		}
+	} else {
+		log.Infof("NodeService::unbindMount -- target %s was already unmounted", target)
+	}
+	return nil
 }

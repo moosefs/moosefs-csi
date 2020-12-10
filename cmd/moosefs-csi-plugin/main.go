@@ -18,31 +18,61 @@ package main
 
 import (
 	"flag"
-	"log"
+	"fmt"
+	"path"
 
 	"github.com/moosefs/moosefs-csi/driver"
+	log "github.com/sirupsen/logrus"
 )
+
+var Mfslog *driver.MfsLog
 
 func main() {
 	var (
-		endpoint = flag.String("endpoint", "unix:///var/lib/kubelet/plugins/com.tuxera.csi.moosefs/csi.sock", "CSI endpoint")
-		topo     = flag.String("topology", "master:AWS,chunk:AWS", "MooseFS cluster topology, e.g. For AWS, master:AWS,chunk:AWS. For exiting cluster master:ep,chunk=ep")
-		// AWS
-		awsAccessKeyID  = flag.String("aws-access", "", "AWS Access key Id")
-		awsSessionToken = flag.String("aws-session", "", "AWS Session token")
-		awsSecret       = flag.String("aws-secret", "", "AWS Secret Access key")
-		awsRegion       = flag.String("aws-region", "", "AWS region where to deploy")
-		// Already existing endpoint
-		mfsEP = flag.String("mfs-endpoint", "", "MooseFS endpoint to use (already provisioned cluster), e.g. 192.168.75.201: (remember the ':' suffix)")
+		mode             = flag.String("mode", "value", "")
+		csiEndpoint      = flag.String("csi-endpoint", "unix:///var/lib/kubelet/plugins/com.tuxera.csi.moosefs/csi.sock", "CSI endpoint")
+		mfsmaster        = flag.String("master-host", "mfsmaster", "MooseFS endpoint to use (already provisioned cluster), e.g. 192.168.75.201")
+		nodeID           = flag.String("node-id", "", "")
+		rootDir          = flag.String("root-dir", "/", "")
+		pluginDataDir    = flag.String("plugin-data-dir", "/.persistent_volumes", "")
+		mountPointsCount = flag.Int("mount-points-count", 2, "")
 	)
 	flag.Parse()
 
-	drv, err := driver.NewCSIDriver(*endpoint, *topo, *awsAccessKeyID, *awsSecret, *awsSessionToken, *awsRegion, *mfsEP)
-	if err != nil {
-		log.Fatalln(err)
+	Mfslog = driver.MakeMfsLog(
+		path.Join(fmt.Sprintf("/mnt/mount_node_%s_%02d", *nodeID, 0), *pluginDataDir,
+			fmt.Sprintf("logz_%s", *nodeID)), false)
+
+	var srv driver.PluginService
+
+	switch *mode {
+	case "node":
+		srv_, err := driver.NewNodeService(*mfsmaster, *rootDir, *pluginDataDir, *nodeID, *mountPointsCount)
+		if err != nil {
+			panic(err)
+		}
+		srv = driver.PluginService{PluginServiceInterface: srv_}
+
+	case "controller":
+		srv_, err := driver.NewControllerService(*mfsmaster, *rootDir, *pluginDataDir)
+		if err != nil {
+			panic(err)
+		}
+		srv = driver.PluginService{PluginServiceInterface: srv_}
+
+	default:
+		log.Fatalf("main -- unrecognized --mode=%s", *mode)
+		return
 	}
 
-	if err := drv.Run(); err != nil {
+	if err := srv.Run(*csiEndpoint); err != nil {
+		//
+		Mfslog.Log("teraz fatal")
+		//
 		log.Fatalln(err)
 	}
+	//
+	Mfslog.Log("zaraz stop")
+	//
+	srv.Stop()
 }

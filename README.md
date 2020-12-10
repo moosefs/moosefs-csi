@@ -1,150 +1,223 @@
-# Container Storage Interface (CSI) for MooseFs
-[Container storage interface](https://kubernetes-csi.github.io/docs/) is an [industry standard](https://github.com/container-storage-interface/spec/blob/master/spec.md) that will enable storage vendors to develop a plugin once and have it work across a number of container orchestration systems.
+# Container Storage Interface (CSI) driver for MooseFS
+[Container storage interface](https://github.com/container-storage-interface/spec) is an [industry standard](https://github.com/container-storage-interface/spec/blob/master/spec.md) that enables storage vendors to develop a plugin once and have it work across a number of container orchestration systems.
 
-MooseFs is an open-source distributed file system which aims to be fault-tolerant, highly available, highly performing, scalable general-purpose network distributed file system for data centers.
+[MooseFS](https://moosefs.com) is a petabyte Open-Source distributed file system. It aims to be fault-tolerant, highly available, highly performing, scalable general-purpose network distributed file system for data centers.
 
-# Introduction
-Similar to other storage providers MooseFs can act as a layer on top of hybrid storage. The storage can be distributed across multiple private/public clouds.
+MooseFS source code can be found [on GitHub](https://github.com/moosefs/moosefs).
 
-[//]: # "image courtesy: https://schd.ws/hosted_files/kccnceu18/fb/CloudNativeCon%20EU%202018%20CSI%20Jie%20Yu.pdf"
-![alt MooseFSCSI](MooseFSinCSI.png)
+---
 
+*Note that on each node a pool of MooseFS Clients that are available for use by containers is created. By default the number of MooseFS Clients in the pool is `1`.*
 
-# How it works (Kubernetes)
-MooseFs abstracts heterogenous storage providers and acts as a single interface. Here, you can see a kubernetes cluster with moosefs-csi in GKE having storage from AWS elastic block store and Google's persistant disk.
-![alt k8sMooseFs](k8sMooseFs.png)
+## Installation on Kubernetes
 
-# Version Compatibility
-| Kubernetes | csi-cluster-driver-registrar| csi-node-driver-registrar |csi-attacher| csi-provisioner| MooseFS CSI AWS  | MooseFS CSI GKE | MooseFS CSI Azure | MooseFS CSI EP (On_prem)  |
-|:----------:|:----:|:----:|:----:|:----:|:----:|:----:|:----:|:-------------:|
-| `v1.13.1`   | `v1.0.1` | `v1.0.1` | `v1.0.1` | `v1.0.1` | [v0.0.4](https://quay.io/repository/tuxera/moosefs-csi-plugin) |-|-| [v0.0.4](https://quay.io/repository/tuxera/moosefs-csi-plugin) |
+### Prerequisites
 
-# Deployment (Kubernetes)
-#### Prerequisites:
-* Already have a working Kubernetes cluster (includes `kubectl`)
-* AWS/GCP/Azure credentials available (not needed for on premise clusters[EP])
-#### Storage deployment topology (Optional)
-* Inorder to work with MooseFS, one should choose the MooseFS topology. MooseFS consists of Master and Chunk servers, get to know more about [MooseFS architecture here](https://moosefs.com/blog/architecture/).
-* The `topology` to be passed to this plugin should be of format: `master:<Provider>,chunk:<Provider>`. Some valid examples:
-    - `master:EP,chunk:EP`, EP here stands for endpoint
-    - `master:AWS,chunk:AWS`,
-    - `master:AWS,chunk:GCP`,
-    - `chunk:AZURE,master:GCP`
-* Limitations: As of now, there is support only for: AWS,AWS and EP,EP i.e. the first two example above. The rest of the combinations are under development. 
+* MooseFS Cluster up and running
 
-## AWS EBS storage for your Kubernetes cluster
+* `--allow-privileged=true` flag set for both API server and kubelet (default value for kubelet is `true`)
 
-1. Git clone this repository and add your credentials to `deploy/kubernetes/moosefs-csi.yaml`
+### Deployment
 
-2. Apply the container storage interface for moosefs for your cluster
+1. Complete `deploy/kubernetes/moosefs-csi-config.yaml` configuration file with your settings:
+    * `master_host` – IP address of your MooseFS Master Server(s). It is an equivalent to `-H master_host` or `-o mfsmaster=master_host` passed to MooseFS Client.
+    * `k8s_root_dir` – each mount's root directory on MooseFS. Each path is relative to this one. Equivalent to `-S k8s_root_dir` or `-o mfssubfolder=k8s_root_dir` passed to MooseFS Client.
+    * `pv_working_dir` – a directory inside MooseFS where persistent volumes are stored (actual path is: `k8s_root_dir` + `pv_working_dir`)
+    * `mount_count` – number of pre created MooseFS clients running on each node
+
+    and apply:
+    
+    ```
+    $ kubectl apply -f deploy/kubernetes/moosefs-csi-config.yaml
+    ```
+
+2. ConfigMap should now be created:
+
+    ```
+    $ kubectl get configmap -n kube-system
+    NAME                                 DATA   AGE
+    csi-moosefs-config                   5      42s
+    ```
+
+3. Deploy CSI MooseFS plugin along with CSI Sidecar Containers:
+
+    ```
+    $ kubectl apply -f deploy/kubernetes/moosefs-csi.yaml
+    ```
+
+4. Ensure that all the containers are ready, up and running
+
+    ```
+    kube@k-master:~$ kubectl get pods -n kube-system | grep csi-moosefs
+    csi-moosefs-controller-0                   3/3     Running   0          44m
+    csi-moosefs-node-7h4pj                     2/2     Running   0          44m
+    csi-moosefs-node-8n5hj                     2/2     Running   0          44m
+    csi-moosefs-node-n4prg                     2/2     Running   0          44m
+    ```
+   
+    You should see a single `csi-moosefs-controller-x` running and `csi-moosefs-node-xxxxx` one per each node.
+
+    You may also take a look at your MooseFS CGI Monitoring Interface ("Mounts" tab) to check if new Clients are connected – mount points: `/mnt/mount_controller` and `/mnt/mount_node_${nodeId}_{mountId}`.
+
+### Verification
+
+1. Create a persistent volume claim for 5 GiB:
+
+    ```
+    $ kubectl apply -f examples/kubernetes/dynamic-provisioning/pvc.yaml
+    ```
+
+2. Verify if the persistent volume claim exists and wait until it's STATUS is `Bound`:
+
+    ```
+    $ kubectl get pvc
+    NAME             STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS      AGE
+    my-moosefs-pvc   Bound    pvc-a62451d4-0d75-4f81-bfb3-8402c59bfc25   5Gi        RWX            moosefs-storage   69m
+    ```
+
+3. After its in `Bound` state, create a sample workload that mounts the volume:
+
+    ```
+    $ kubectl apply -f examples/kubernetes/dynamic-provisioning/pod.yaml
+    ```
+
+4. Verify the storage is mounted:
+
+    ```
+    $ kubectl exec my-moosefs-pod -- df -h /data
+    Filesystem                Size      Used Available Use% Mounted on
+    172.17.2.80:9421          4.2T      1.4T      2.8T  33% /data
+    ```
+   
+   You may take a look at MooseFS CGI Monitoring Interface ("Quotas" tab) to check if a quota for 5 GiB on a newly created volume directory has been set.
+   
+5. Clean up:
+
+    ```
+    $ kubectl delete -f examples/kubernetes/dynamic-provisioning/pod.yaml
+    $ kubectl delete -f examples/kubernetes/dynamic-provisioning/pvc.yaml
+    ```
+
+## More examples and capabilities
+
+### Volume Expansion
+
+Volume expansion can be done by updating and applying corresponding PVC specification.
+
+**Note:** the volume size can only be increased. Any attempts to decrease it will result in an error. It is not recommended to resize Persistent Volume MooseFS-allocated quotas via MooseFS native tools, as such changes will not be visible in your Container Orchestrator.
+
+### Mount MooseFS inside containers
+
+It is possible to mount any MooseFS directory inside containers using static provisioning.
+
+1. Create a Persistent Volume (`examples/kubernetes/mount/pv.yaml`):
+
+    ```
+    kind: PersistentVolume
+    apiVersion: v1
+    metadata:
+      name: my-moosefs-mount-pv
+    spec:
+      storageClassName: ""               # empty Storage Class
+      capacity:
+        storage: 1Gi                     # required, however does not have any effect
+      accessModes:
+        - ReadWriteMany
+      csi:
+        driver: moosefs.csi.tappest.com
+        volumeHandle: submount-example   # currently does not have any effect
+        volumeAttributes:
+          mfsSubFolder: "/"              # subfolder to be mounted as a rootdir (inside k8s_root_dir)
+    ```
+   
+2. Create corresponding Persistent Volume Claim (`examples/kubernetes/mount/pvc.yaml`):
+
+    ```
+    kind: PersistentVolumeClaim
+    apiVersion: v1
+    metadata:
+      name: my-moosefs-mount-pvc
+    spec:
+      storageClassName: ""               # empty Storage Class
+      volumeName: my-moosefs-mount-pv
+      accessModes:
+        - ReadWriteMany
+      resources:
+        requests:
+          storage: 1Gi                   # at least as much as in PV, does not have any effect
+    ```   
+   
+3. Apply both configurations:
+
+    ```
+    $ kubectl apply -f examples/kubernetes/mount/pv.yaml
+    $ kubectl apply -f examples/kubernetes/mount/pvc.yaml
+    ```
+   
+4. Verify that PVC exists and wait until it is bound to the previously created PV:
+
+    ```
+    $ kubectl get pvc
+    NAME                    STATUS   VOLUME                 CAPACITY   ACCESS MODES   STORAGECLASS   AGE
+    my-moosefs-mount-pvc    Bound     my-moosefs-mount-pv   1Gi        RWX                           23m
+    ```
+   
+5. Create a sample workload that mounts the volume:
+
+    ```
+    $ kubectl apply -f examples/kubernetes/mount/pod.yaml
+    ```
+   
+6. Verify that the storage is mounted:
+
+    ```
+    $ kubectl exec -it my-moosefs-pod -- ls /data
+    ```
+   
+   You should see the content of `k8s_root_dir + mfsSubFolder`.
+   
+7. Clean up:
+
+    ```
+    $ kubectl delete -f examples/kubernetes/mount/pod.yaml
+    $ kubectl delete -f examples/kubernetes/mount/pvc.yaml
+    $ kubectl delete -f examples/kubernetes/mount/pv.yaml
+    ```
+
+By using `containers[*].volumeMounts[*].subPath` field of `PodSpec` it is possible to specify a proper MooseFS subfolder using only one PV/PVC pair, without creating a new one for each subfolder:
+
 ```
-$ kubectl apply -f deploy/kubernetes/moosefs-csi.yaml
-```
-3. Ensure all the containers are ready and running
-```
-$ kubectl get po -n kube-system
-```
-4. Testing: Create a persistant volume claim for 5GiB with name `moosefs-csi-pvc` with storage class `moosefs-block-storage`
-```
-$ kubectl apply -f deploy/kubernetes/sample-moosefs-pvc.yaml
-```
-5. Verify if the persistant volume claim exists and wait until its the STATUS is `Bound`
-```
-$ kubectl get pvc
-```
-6. After its in `Bound` state, create a sample workload mounting that volume
-```
-$ kubectl apply -f deploy/kubernetes/sample-busybox-pod.yaml
-```
-7. Verify the storage mount of the busybox pod
-```
-$ kubectl exec my-csi-app -- df -h
-```
-8. Clean up
-```
-$ kubectl delete -f deploy/kubernetes/sample-busybox-pod.yaml
-$ kubectl delete -f deploy/kubernetes/sample-moosefs-pvc.yaml
-$ kubectl delete -f deploy/kubernetes/moosefs-csi.yaml
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: my-site-app
+spec:
+  template:
+    spec:
+      containers:
+        - name: my-frontend
+          # ...
+          volumeMounts:
+            - name: my-moosefs-mount
+              mountPath: "/var/www/my-site/assets/images"
+              subPath: "resources/my-site/images"
+            - name: my-moosefs-mount
+              mountPath: "/var/www/my-site/assets/css"
+              subPath: "resources/my-site/css"
+      volumes:
+        - name: my-moosefs-mount
+          persistentVolumeClaim:
+            claimName: my-moosefs-mount-pvc
 ```
 
-## Utilize exiting **on-premise** MooseFS storage for your Kubernetes cluster (bare metal)
+## Version Compatibility
 
-1. Git clone this repository and add your MooseFS master IP to `deploy/kubernetes/moosefs-csi-ep.yaml` (2 places)
+| Kubernetes | MooseFS CSI Driver |
+|:---:|:---:|
+| `v1.18.5` | `v0.9.0`|
 
-2. Apply the container storage interface for moosefs for your cluster
-```
-$ kubectl apply -f deploy/kubernetes/moosefs-csi-ep.yaml
-```
-3. Ensure all the containers are ready and running
-```
-$ kubectl get po -n kube-system
-```
-4. Testing: Create a persistant volume claim for 5GiB with name `moosefs-csi-pvc` with storage class `moosefs-block-storage`. The value, 5Gib does not have any significance as for MooseFS the whole filesystem is mounted into the container.
-```
-$ kubectl apply -f deploy/kubernetes/sample-moosefs-pvc.yaml
-```
-5. Verify if the persistant volume claim exists and wait until its the STATUS is `Bound`
-```
-$ kubectl get pvc
-```
-6. After its in `Bound` state, create a sample workload mounting that volume
-```
-$ kubectl apply -f deploy/kubernetes/sample-busybox-pod.yaml
-```
-7. Verify the storage mount of the busybox pod
-```
-$ kubectl exec my-csi-app -- df -h
-```
-8. Clean up 
-```
-$ kubectl delete -f deploy/kubernetes/sample-busybox-pod.yaml
-$ kubectl delete -f deploy/kubernetes/sample-moosefs-pvc.yaml
-$ kubectl delete -f deploy/kubernetes/moosefs-csi.yaml
-```
-
-
-# Debuging
-| Section                  | Issues                            |Commands  |
-| -------------            |:-------------                     |:-----    |
-| Persistance volume claim |pvc is in Pending state            | `kubectl get events` |
-|                          || `kubectl logs csi-attacher-moosefs-plugin-0 -c moosefs-csi-plugin -n kube-system` |
-|                          || `kubectl logs csi-provisioner-moosefs-plugin-0 -c moosefs-csi-plugin -n kube-system` |
-| Driver name not found    |MountVolume.MountDevice failed for volume "pvc-XYZ" : driver name com.tuxera.moosefs.csi not found in the list of registered CSI drivers | Ensure `kube-apiserver` and `kubelet` has the correct [feature-gates](https://kubernetes-csi.github.io/docs/print.html#deployment-6) enabled (for k8s < 1.14) |
-
-# Developing and contributing
-
-1. Add and commit your changes after forking this repository
-2. Run unit tests
-```
-make test
-```
-3. After its successfull, create a pull request :heart: :heart: 
-
-
-# Miscelleneous
-| Description                        | Command       |
-| -------------                      |:------------- |
-|AWS session token creation          |`aws sts get-session-token --duration-seconds 129600` |
-|Docker command for launching moosefs|`docker run --cap-add SYS_ADMIN --security-opt apparmor:unconfined -v /dev/fuse:/dev/fuse --privileged -it mfs /bin/bash`
-
-
-# TODO
-* Possibility to define the count of physical disks on servers
-* Possibility to define the count of chunk servers
-* Automatically generate the best mooseFs configration based on user's need/metrics (how many chunks, topology of servers etc.)
-* Possibility to define replication goal (Erosure codes)
-
-# Known Bugs/limitations
-* AWS
-    - Chunk server creation is not idempotent, sometimes creates more chunk servers than requested causing more disk space available than requested.
-    - AWS Security Group is not deleted while decommissioning, needs to be done manually
-    - Fargate cluster is not deleted while decommissioning
-
-
-MountVolume.MountDevice failed for volume "pvc-c3738d2cc47711e8" : driver name com.digitalocean.csi.dobs not found in the list of registered CSI drivers
-
-# License
+## License
 [Apache v2 license](https://www.apache.org/licenses/LICENSE-2.0)
 
-# Code of conduct
+## Code of conduct
 Participation in this project is governed by [Kubernetes/CNCF code of conduct](https://github.com/kubernetes/community/blob/master/code-of-conduct.md)

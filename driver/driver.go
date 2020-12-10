@@ -24,68 +24,33 @@ import (
 	"path"
 	"path/filepath"
 
-	"github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 )
 
 const (
-	driverName   = "com.tuxera.csi.moosefs"
-	version      = "dev"
-	gitTreeState = "not a git tree"
-	commit       = ""
+	driverName    = "moosefs.csi.tappest.com"
+	driverVersion = "0.5-dev"
 )
 
-// CSIDriver implements the following CSI interfaces:
-//
-//   csi.IdentityServer
-//   csi.ControllerServer
-//   csi.NodeServer
-//
-type CSIDriver struct {
-	endpoint string
-	topology string
-	nodeID   string
-	// AWS
-	awsAccessKey    string
-	awsSecret       string
-	awsSessionToken string
-	awsRegion       string
-	// Existing endpoint
-	mfsEP string
-
-	srv     *grpc.Server
-	log     *logrus.Entry
-	mounter Mounter
+type PluginServiceInterface interface {
+	Register(*grpc.Server)
 }
 
-// NewCSIDriver returns a CSI plugin that contains the necessary gRPC
-// interfaces to interact with Kubernetes over unix domain sockets for
-// managaing Moosefs Storage
-func NewCSIDriver(ep, topo, awsAccessKeyID, awsSecret, awsSessionToken, awsRegion, mfsEP string) (*CSIDriver, error) {
-	nodeID := ep // TODO(Anoop): get hostname from EP
-
-	return &CSIDriver{
-		endpoint:        ep,
-		topology:        topo,
-		nodeID:          nodeID,
-		awsAccessKey:    awsAccessKeyID,
-		awsSecret:       awsSecret,
-		awsSessionToken: awsSessionToken,
-		awsRegion:       awsRegion,
-		mfsEP:           mfsEP,
-		mounter:         &mounter{},
-		log: logrus.New().WithFields(logrus.Fields{
-			"node_id": nodeID,
-		}),
-	}, nil
+type PluginService struct {
+	PluginServiceInterface
+	grpcSrv *grpc.Server
 }
+
+var _ PluginServiceInterface = &PluginService{}
 
 // Run starts the CSI plugin by communication over the given endpoint
-func (d *CSIDriver) Run() error {
-	u, err := url.Parse(d.endpoint)
+func (srv *PluginService) Run(csiEndpoint string) error {
+	log.Infof("PluginService::Run")
+
+	u, err := url.Parse(csiEndpoint)
 	if err != nil {
-		return fmt.Errorf("unable to parse address: %q", err)
+		return fmt.Errorf("PluginService::Run unable to parse address: %q", err)
 	}
 
 	addr := path.Join(u.Host, filepath.FromSlash(u.Path))
@@ -95,57 +60,39 @@ func (d *CSIDriver) Run() error {
 
 	// CSI plugins talk only over UNIX sockets currently
 	if u.Scheme != "unix" {
-		return fmt.Errorf("currently only unix domain sockets are supported, have: %s", u.Scheme)
+		return fmt.Errorf("PluginService::Run currently only unix domain sockets are supported, have: %s", u.Scheme)
 	} else {
 		// remove the socket if it's already there. This can happen if we
 		// deploy a new version and the socket was created from the old running
 		// plugin.
-		d.log.WithField("socket", addr).Info("removing socket")
+		log.WithField("socket", addr).Info("removing socket")
 		if err := os.Remove(addr); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("failed to remove unix domain socket file %s, error: %s", addr, err)
+			return fmt.Errorf("PluginService::Run failed to remove unix domain socket file %s, error: %s", addr, err)
 		}
 	}
 
 	listener, err := net.Listen(u.Scheme, addr)
 	if err != nil {
-		return fmt.Errorf("failed to listen: %v", err)
+		return fmt.Errorf("PluginService::Run failed to listen: %v", err)
 	}
 
 	// log response errors for better observability
 	errHandler := func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		resp, err := handler(ctx, req)
 		if err != nil {
-			d.log.WithError(err).WithField("method", info.FullMethod).Error("method failed")
+			log.WithError(err).WithField("method", info.FullMethod).Error("method failed")
 		}
 		return resp, err
 	}
 
-	d.srv = grpc.NewServer(grpc.UnaryInterceptor(errHandler))
-	csi.RegisterIdentityServer(d.srv, d)
-	csi.RegisterControllerServer(d.srv, d)
-	csi.RegisterNodeServer(d.srv, d)
+	srv.grpcSrv = grpc.NewServer(grpc.UnaryInterceptor(errHandler))
+	srv.Register(srv.grpcSrv)
 
-	d.log.WithField("addr", addr).Info("server started")
-	return d.srv.Serve(listener)
+	return srv.grpcSrv.Serve(listener)
 }
 
-// Stop stops the plugin
-func (d *CSIDriver) Stop() {
-	d.log.Info("server stopped")
-	d.srv.Stop()
-}
-
-func GetVersion() string {
-	return version
-}
-
-// GetCommit returns the current commit hash value, as inserted at build time.
-func GetCommit() string {
-	return commit
-}
-
-// GetTreeState returns the current state of git tree, either "clean" or
-// "dirty".
-func GetTreeState() string {
-	return gitTreeState
+// stops the plugin
+func (srv *PluginService) Stop() {
+	log.Infof("PluginService::Stop")
+	srv.grpcSrv.Stop()
 }

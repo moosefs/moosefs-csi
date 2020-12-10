@@ -25,7 +25,7 @@ RUN wget -O - http://ppa.moosefs.com/moosefs.key | apt-key add -
 RUN . /etc/lsb-release && echo "deb http://ppa.moosefs.com/moosefs-3/apt/ubuntu/$DISTRIB_CODENAME $DISTRIB_CODENAME main" > /etc/apt/sources.list.d/moosefs.list
 
 # Install MooseFS client
-RUN apt-get update && apt-get install -y moosefs-client
+RUN apt-get update && apt-get install -y moosefs-pro-client
 
 # Copy the CSI plugin
 ADD moosefs-csi-plugin /bin/

@@ -28,9 +28,11 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	log "github.com/sirupsen/logrus"
 )
 
-type Mounter interface {
+type MounterInt interface {
 	// Mount a volume
 	Mount(sourcePath string, destPath, mountType string, opts ...string) error
 
@@ -38,11 +40,14 @@ type Mounter interface {
 	UMount(destPath string) error
 
 	// Verify mount
-	IsMounted(sourcePath string, destPath string) (bool, error)
+	IsMounted(destPath string) (bool, error)
 }
 
-type mounter struct {
+type Mounter struct {
+	MounterInt
 }
+
+var _ MounterInt = &Mounter{}
 
 type findmntResponse struct {
 	FileSystems []fileSystem `json:"filesystems"`
@@ -61,7 +66,7 @@ type fileSystem struct {
  *
  */
 
-func (m *mounter) Mount(sourcePath, destPath, mountType string, opts ...string) error {
+func (m *Mounter) Mount(sourcePath, destPath, mountType string, opts ...string) error {
 	mountCmd := "mount"
 	mountArgs := []string{}
 
@@ -86,7 +91,7 @@ func (m *mounter) Mount(sourcePath, destPath, mountType string, opts ...string) 
 	if err != nil {
 		return err
 	}
-
+	/// tutaj bug
 	out, err := exec.Command(mountCmd, mountArgs...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("mounting failed: %v cmd: '%s %s' output: %q",
@@ -104,7 +109,7 @@ func (m *mounter) Mount(sourcePath, destPath, mountType string, opts ...string) 
  *
  */
 
-func (m *mounter) UMount(destPath string) error {
+func (m *Mounter) UMount(destPath string) error {
 	umountCmd := "umount"
 	umountArgs := []string{}
 
@@ -130,11 +135,7 @@ func (m *mounter) UMount(destPath string) error {
  *	courtesy: https://github.com/digitalocean/csi-digitalocean/blob/master/driver/mounter.go
  */
 
-func (m *mounter) IsMounted(sourcePath, destPath string) (bool, error) {
-	if sourcePath == "" {
-		return false, errors.New("source is not specified for checking the mount")
-	}
-
+func (m *Mounter) IsMounted(destPath string) (bool, error) {
 	if destPath == "" {
 		return false, errors.New("target is not specified for checking the mount")
 	}
@@ -148,7 +149,7 @@ func (m *mounter) IsMounted(sourcePath, destPath string) (bool, error) {
 		return false, err
 	}
 
-	findmntArgs := []string{"-o", "TARGET,PROPAGATION,FSTYPE,OPTIONS", sourcePath, "-J"}
+	findmntArgs := []string{"-o", "TARGET,PROPAGATION,FSTYPE,OPTIONS", "-M", destPath, "-J"}
 	out, err := exec.Command(findmntCmd, findmntArgs...).CombinedOutput()
 	if err != nil {
 		// findmnt exits with non zero exit status if it couldn't find anything
@@ -160,6 +161,10 @@ func (m *mounter) IsMounted(sourcePath, destPath string) (bool, error) {
 			err, findmntCmd, string(out))
 	}
 
+	if string(out) == "" {
+		return false, nil
+	}
+
 	var resp *findmntResponse
 	err = json.Unmarshal(out, &resp)
 	if err != nil {
@@ -168,9 +173,11 @@ func (m *mounter) IsMounted(sourcePath, destPath string) (bool, error) {
 
 	targetFound := false
 	for _, fs := range resp.FileSystems {
+		log.Infof("%s %s %s %s", fs.FsType, fs.Options, fs.Propagation, fs.Target)
 		// check if the mount is propagated correctly. It should be set to shared.
 		if fs.Propagation != "shared" {
-			return true, fmt.Errorf("mount propagation for target %q is not enabled or the block device %q does not exist anymore", destPath, sourcePath)
+
+			//			return true, fmt.Errorf("mount propagation for target %q is not enabled", destPath)
 		}
 
 		// the mountpoint should match as well

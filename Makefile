@@ -14,6 +14,7 @@
 
 VERSION ?= dev
 NAME=moosefs-csi-plugin
+DOCKER_REGISTRY=registry.moosefs.pro:8443
 
 all: ready
 
@@ -36,20 +37,37 @@ test:
 
 build:
 	@echo "==> Building the docker image"
-	@docker build -t quay.io/tuxera/moosefs-csi-plugin:$(VERSION) cmd/moosefs-csi-plugin
-	@docker build -t quay.io/tuxera/moosefs-csi-plugin:latest cmd/moosefs-csi-plugin
+	@docker build -t $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(VERSION) cmd/moosefs-csi-plugin
+	@docker build -t $(DOCKER_REGISTRY)/moosefs-csi-plugin:latest cmd/moosefs-csi-plugin
+
+build-prod:
+	@echo "==> Building the docker image (PROD)"
+	@docker tag $(DOCKER_REGISTRY)/moosefs-csi-plugin:master $(DOCKER_REGISTRY)/moosefs-csi-plugin:master-backup
+	@docker build -t $(DOCKER_REGISTRY)/moosefs-csi-plugin:master cmd/moosefs-csi-plugin
 
 push-image:
 	@echo "==> Publishing tuxera/moosefs-csi-plugin:$(VERSION)"
-	@docker push quay.io/tuxera/moosefs-csi-plugin:$(VERSION)
-	@docker push quay.io/tuxera/moosefs-csi-plugin:latest
-	@echo "==> Your image is now available at quay.io/tuxera/moosefs-csi-plugin:$(VERSION)/latest"
+	@docker push $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(VERSION)
+	@docker push $(DOCKER_REGISTRY)/moosefs-csi-plugin:latest
+	@echo "==> Your image is now available at $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(VERSION)/latest"
+
+push-image-prod:
+	@echo "==> Publishing tuxera/moosefs-csi-plugin:master"
+	@docker push $(DOCKER_REGISTRY)/moosefs-csi-plugin:master
+#	@docker push logs.moosefs.pro:443/moosefs-csi-plugin:master-backup
+	@echo "==> Your image is now available at $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(VERSION)/latest"
 
 clean:
 	@echo "==> Cleaning releases"
 	@GOOS=linux go clean -i -x ./...
 
 .PHONY: all push fetch build-image clean
+
+
+
+
+
+# TODO(ad): not needed?
 
 # Builds moosefs-master, moosefs-chunk
 # TODO(anoop): To be moved upstream

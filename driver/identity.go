@@ -19,28 +19,37 @@ package driver
 import (
 	"context"
 
+	"google.golang.org/grpc"
+
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/golang/protobuf/ptypes/wrappers"
-	"github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 )
 
-// GetPluginInfo returns metadata of the plugin
-func (d *CSIDriver) GetPluginInfo(ctx context.Context, req *csi.GetPluginInfoRequest) (*csi.GetPluginInfoResponse, error) {
-	resp := &csi.GetPluginInfoResponse{
-		Name:          driverName,
-		VendorVersion: version,
-	}
-
-	d.log.WithFields(logrus.Fields{
-		"response": resp,
-		"method":   "get_plugin_info",
-	}).Info("get plugin info called")
-	return resp, nil
+type IdentityService struct {
+	csi.IdentityServer
 }
 
-// GetPluginCapabilities returns available capabilities of the plugin
-func (d *CSIDriver) GetPluginCapabilities(ctx context.Context, req *csi.GetPluginCapabilitiesRequest) (*csi.GetPluginCapabilitiesResponse, error) {
-	resp := &csi.GetPluginCapabilitiesResponse{
+var _ csi.IdentityServer = &IdentityService{}
+
+func (is *IdentityService) Register(srv *grpc.Server) {
+	log.Infof("IdentityServer::Register")
+	csi.RegisterIdentityServer(srv, is)
+}
+
+func (is *IdentityService) GetPluginInfo(ctx context.Context, req *csi.GetPluginInfoRequest) (*csi.GetPluginInfoResponse, error) {
+	log.Infof("IdentityServer::GetPluginInfo")
+
+	return &csi.GetPluginInfoResponse{
+		Name:          driverName,
+		VendorVersion: driverVersion,
+	}, nil
+}
+
+func (is *IdentityService) GetPluginCapabilities(ctx context.Context, req *csi.GetPluginCapabilitiesRequest) (*csi.GetPluginCapabilitiesResponse, error) {
+	log.Infof("IdentityServer::GetPluginCapabilities")
+
+	return &csi.GetPluginCapabilitiesResponse{
 		Capabilities: []*csi.PluginCapability{
 			{
 				Type: &csi.PluginCapability_Service_{
@@ -50,25 +59,19 @@ func (d *CSIDriver) GetPluginCapabilities(ctx context.Context, req *csi.GetPlugi
 				},
 			},
 			{
-				Type: &csi.PluginCapability_Service_{
-					Service: &csi.PluginCapability_Service{
-						Type: csi.PluginCapability_Service_VOLUME_ACCESSIBILITY_CONSTRAINTS,
+				Type: &csi.PluginCapability_VolumeExpansion_{
+					VolumeExpansion: &csi.PluginCapability_VolumeExpansion{
+						Type: csi.PluginCapability_VolumeExpansion_ONLINE,
 					},
 				},
 			},
 		},
-	}
-
-	d.log.WithFields(logrus.Fields{
-		"response": resp,
-		"method":   "get_plugin_capabilities",
-	}).Info("get plugin capabitilies called")
-	return resp, nil
+	}, nil
 }
 
-// Probe returns the health and readiness of the plugin
-func (d *CSIDriver) Probe(ctx context.Context, req *csi.ProbeRequest) (*csi.ProbeResponse, error) {
-	d.log.WithField("method", "prove").Info("probe called")
+func (is *IdentityService) Probe(ctx context.Context, req *csi.ProbeRequest) (*csi.ProbeResponse, error) {
+	log.Infof("IdentityServer::Probe")
+
 	return &csi.ProbeResponse{
 		Ready: &wrappers.BoolValue{
 			Value: true,
