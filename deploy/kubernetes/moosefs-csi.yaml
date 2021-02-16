@@ -176,7 +176,7 @@ spec:
             capabilities:
               add: ["SYS_ADMIN"]
             allowPrivilegeEscalation: true
-          image: logs.moosefs.pro:443/moosefs-csi-plugin:master
+          image: registry.moosefs.pro:443/moosefs-csi-plugin:master
           args :
             - "--mode=controller"
             - "--csi-endpoint=$(CSI_ENDPOINT)"
@@ -256,7 +256,7 @@ spec:
             capabilities:
               add: ["SYS_ADMIN"]
             allowPrivilegeEscalation: true
-          image: logs.moosefs.pro:443/moosefs-csi-plugin:master
+          image: registry.moosefs.pro:443/moosefs-csi-plugin:master
           args:
             - "--mode=node"
             - "--csi-endpoint=$(CSI_ENDPOINT)"
