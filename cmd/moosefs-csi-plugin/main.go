@@ -18,61 +18,56 @@ package main
 
 import (
 	"flag"
-	"fmt"
-	"path"
 
 	"github.com/moosefs/moosefs-csi/driver"
 	log "github.com/sirupsen/logrus"
 )
 
-var Mfslog *driver.MfsLog
-
 func main() {
 	var (
 		mode             = flag.String("mode", "value", "")
-		csiEndpoint      = flag.String("csi-endpoint", "unix:///var/lib/kubelet/plugins/com.tuxera.csi.moosefs/csi.sock", "CSI endpoint")
+		csiEndpoint      = flag.String("csi-endpoint", "unix:///var/lib/csi/sockets/pluginproxy/csi.sock", "CSI endpoint")
 		mfsmaster        = flag.String("master-host", "mfsmaster", "MooseFS endpoint to use (already provisioned cluster), e.g. 192.168.75.201")
-		nodeID           = flag.String("node-id", "", "")
+		nodeId           = flag.String("node-id", "", "")
 		rootDir          = flag.String("root-dir", "/", "")
-		pluginDataDir    = flag.String("plugin-data-dir", "/.persistent_volumes", "")
-		mountPointsCount = flag.Int("mount-points-count", 2, "")
+		pluginDataDir    = flag.String("plugin-data-dir", "/", "")
+		mountPointsCount = flag.Int("mount-points-count", 1, "")
+		sanityTestRun    = flag.Bool("sanity-test-run", false, "")
+		logLevel         = flag.Int("log-level", 5, "")
+		mfsLog           = flag.Bool("mfs-logging", true, "")
 	)
 	flag.Parse()
 
-	Mfslog = driver.MakeMfsLog(
-		path.Join(fmt.Sprintf("/mnt/mount_node_%s_%02d", *nodeID, 0), *pluginDataDir,
-			fmt.Sprintf("logz_%s", *nodeID)), false)
+	driver.Init(*sanityTestRun, *logLevel, *mfsLog)
 
-	var srv driver.PluginService
+	if *sanityTestRun {
+		log.Infof("=============== SANITY TEST ===============")
+	}
+	// this won't be logged to mfs log file
+	log.Infof("Starting new service (mode: %s; mfsmaster-host: %s; node-id: %s; root-dir: %s; plugin-data-dir: %s)",
+		*mode, *mfsmaster, *nodeId, *rootDir, *pluginDataDir)
 
+	var srv driver.Service
+	var err error
 	switch *mode {
 	case "node":
-		srv_, err := driver.NewNodeService(*mfsmaster, *rootDir, *pluginDataDir, *nodeID, *mountPointsCount)
+		srv, err = driver.NewNodeService(*mfsmaster, *rootDir, *pluginDataDir, *nodeId, *mountPointsCount)
 		if err != nil {
-			panic(err)
+			log.Error("main - couldn't create node service. Error: %s", err.Error())
+			return
 		}
-		srv = driver.PluginService{PluginServiceInterface: srv_}
-
 	case "controller":
-		srv_, err := driver.NewControllerService(*mfsmaster, *rootDir, *pluginDataDir)
+		srv, err = driver.NewControllerService(*mfsmaster, *rootDir, *pluginDataDir)
 		if err != nil {
-			panic(err)
+			log.Error("main - couldn't create controller service. Error: %s", err.Error())
+			return
 		}
-		srv = driver.PluginService{PluginServiceInterface: srv_}
-
 	default:
-		log.Fatalf("main -- unrecognized --mode=%s", *mode)
+		log.Error("main - unrecognized mode = %s", *mode)
 		return
 	}
 
-	if err := srv.Run(*csiEndpoint); err != nil {
-		//
-		Mfslog.Log("teraz fatal")
-		//
-		log.Fatalln(err)
+	if err = driver.StartService(&srv, *mode, *csiEndpoint); err != nil {
+		log.Error("main - couldn't start service %s", err.Error())
 	}
-	//
-	Mfslog.Log("zaraz stop")
-	//
-	srv.Stop()
 }

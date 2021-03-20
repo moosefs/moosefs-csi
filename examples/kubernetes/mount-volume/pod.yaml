@@ -1,7 +1,7 @@
 kind: Pod
 apiVersion: v1
 metadata:
-  name: my-moosefs-pod
+  name: my-moosefs-pod-mount
 spec:
   containers:
     - name: my-frontend
@@ -13,4 +13,4 @@ spec:
   volumes:
     - name: moosefs-volume
       persistentVolumeClaim:
-        claimName: my-moosefs-mount-pvc
+        claimName: my-moosefs-pvc-mount

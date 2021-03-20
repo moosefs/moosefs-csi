@@ -1,7 +1,7 @@
 kind: PersistentVolume
 apiVersion: v1
 metadata:
-  name: my-moosefs-mount-pv
+  name: my-moosefs-pv-mount
 spec:
   storageClassName: ""               # empty Storage Class
   capacity:
@@ -10,6 +10,6 @@ spec:
     - ReadWriteMany
   csi:
     driver: moosefs.csi.tappest.com
-    volumeHandle: submount-example   # currently does not have any effect
+    volumeHandle: my-mount-volume    # unique volume name
     volumeAttributes:
-      mfsSubFolder: "/"              # subfolder to be mounted as a rootdir (inside k8s_root_dir)
+      mfsSubDir: "/"                 # subfolder to be mounted as a rootdir (inside k8s_root_dir)

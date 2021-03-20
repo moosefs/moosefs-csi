@@ -7,6 +7,7 @@ data:
   master_host: "172.17.2.80"
   master_port: "9421"                   # todo, currently has no effect
   k8s_root_dir: "/"                     # MooseFS root directory for all claims within this Kubernetes cluster
-  pv_working_dir: "pv_data"             # MooseFS directory (relative to csi_root_dir) for all persistent volumes storage
-                                        # (effective working dir will be calculated as k8s_root_dir + pv_working_dir)
+  driver_working_dir: "pv_data"         # MooseFS directory (relative to csi_root_dir) for all driver data
+                                        # (effective working dir will be calculated as k8s_root_dir/driver_working_dir)
   mount_count: "1"                      # Number of pre-created MooseFS mounts on each node
+  mfs_logging: "true"                   # Should driver log to k8s_root_dir/driver_working_dir/logs directory

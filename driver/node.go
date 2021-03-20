@@ -18,142 +18,123 @@ package driver
 
 import (
 	"context"
-	"fmt"
-	"io/ioutil"
 	"math/rand"
-	"path"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	log "github.com/sirupsen/logrus"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 type NodeService struct {
-	csi.NodeServer
-	*IdentityService
-	*PluginService
+	csi.UnimplementedNodeServer
+	Service
 
 	mountPointsCount int
-	mountPoints      []*MfsMountPoint
-	nodeID           string
-	mfslog           *MfsLog
+	mountPoints      []*mfsHandler
+	nodeId           string
 }
 
-func (ns *NodeService) Register(srv *grpc.Server) {
-	log.Infof("NodeService::Register")
-	ns.IdentityService.Register(srv)
-	csi.RegisterNodeServer(srv, ns)
+var _ csi.NodeServer = &NodeService{}
+
+var nodeCapabilities = []csi.NodeServiceCapability_RPC_Type{
+	//csi.NodeServiceCapability_RPC_GET_VOLUME_STATS,
+	// csi.NodeServiceCapability_RPC_VOLUME_CONDITION,
+	//		csi.NodeServiceCapability_RPC_STAGE_UNSTAGE_VOLUME,
 }
 
-func NewNodeService(mfsmaster, rootDir, pluginDataDir, nodeID string, mountPointsCount int) (*NodeService, error) {
-	ns := &NodeService{
-		mountPointsCount: mountPointsCount,
-		mountPoints:      make([]*MfsMountPoint, mountPointsCount),
-		nodeID:           nodeID,
-		mfslog: &MfsLog{
-			logfile: path.Join(fmt.Sprintf("/mnt/mount_node_%s_%02d", nodeID, 0),
-				pluginDataDir, fmt.Sprintf("logz_%s", nodeID)),
-			active: false,
-		},
-	}
+func NewNodeService(mfsmaster, rootPath, pluginDataPath, nodeId string, mountPointsCount int) (*NodeService, error) {
+	log.Infof("NewNodeService creation (mfsmaster %s, rootDir %s, pluginDataDir %s, nodeId %s, mountPointsCount %d)", mfsmaster, rootPath, pluginDataPath, nodeId, mountPointsCount)
+
+	mountPoints := make([]*mfsHandler, mountPointsCount)
 	for i := 0; i < mountPointsCount; i++ {
-		ns.mountPoints[i], _ = NewMfsMountPoint(mfsmaster, rootDir, fmt.Sprintf("/mnt/mount_node_%s_%02d", nodeID, i), pluginDataDir)
-		if err := ns.mountPoints[i].Mount(); err != nil {
+		mountPoints[i] = NewMfsHandler(mfsmaster, rootPath, pluginDataPath, nodeId, i, mountPointsCount)
+		if err := mountPoints[i].MountMfs(); err != nil {
 			return nil, err
 		}
+	}
+	if MfsLog {
+		mountPoints[0].SetMfsLogging()
+	}
+
+	ns := &NodeService{
+		mountPointsCount: mountPointsCount,
+		mountPoints:      mountPoints,
+		nodeId:           nodeId,
 	}
 	return ns, nil
 }
 
 func (ns *NodeService) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error) {
+	log.Infof("NodePublishVolume - VolumeId: %s, Readonly: %v, VolumeContext %v, PublishContext %v, VolumeCapability %v TargetPath %s", req.GetVolumeId(), req.GetReadonly(), req.GetVolumeContext(), req.GetPublishContext(), req.GetVolumeCapability(), req.GetTargetPath())
 	if req.VolumeId == "" {
-		return nil, status.Error(codes.InvalidArgument, "NodePublishVolume Volume ID must be provided")
+		return nil, status.Error(codes.InvalidArgument, "NodePublishVolume: VolumeId must be provided")
 	}
-
 	if req.TargetPath == "" {
-		return nil, status.Error(codes.InvalidArgument, "NodePublishVolume Target Path must be provided")
+		return nil, status.Error(codes.InvalidArgument, "NodePublishVolume: TargetPath must be provided")
 	}
-
 	if req.VolumeCapability == nil {
-		return nil, status.Error(codes.InvalidArgument, "NodePublishVolume Volume Capability must be provided")
+		return nil, status.Error(codes.InvalidArgument, "NodePublishVolume: VolumeCapability must be provided")
 	}
 
-	log.Infof("NodeServer::NodePublishVolume (volume_id %s, target_path %s, volumecontext %v)", req.VolumeId, req.TargetPath, req.GetVolumeContext())
-	ns.mfslog.Log(fmt.Sprintf("NodeServer::NodePublishVolume (volume_id %s, target_path %s)", req.VolumeId, req.TargetPath))
-
-	source, ok := req.GetVolumeContext()["VolumeDir"]
-	log.Infof("NodeService::NodePublishVolume -- source here is %s", source)
-
-	if !ok {
-		sub_source, ok := req.GetVolumeContext()["mfsSubFolder"]
-		log.Infof("NodeService::NodePublishVolume -- sub_source here is %s", sub_source)
-		if !ok {
-			log.Errorf("NodeService::NodePublishVolume -- VolumeContext doesn't contain 'VolumeDir' and 'mfsSubFolder' fields. Aborting...")
-			return nil, status.Error(codes.InvalidArgument, "NodePublishVolume 'VolumeDir' and 'mfsSubFolder' not found in VolumeContext")
-		}
-		source = sub_source
+	var source string
+	if subDir, found := req.GetVolumeContext()["mfsSubDir"]; found {
+		source = subDir
 	} else {
-		log.Infof("NodeService::NodePublishVolume -- source was found and idk (%s)", source)
-		_, ok := req.GetVolumeContext()["mfsSubFolder"]
-		if ok {
-			log.Errorf("NodeService::NodePublishVolume -- VolumeContext contain both 'VolumeDir' and 'mfsSubFolder' fields. Aborting...")
-			return nil, status.Error(codes.Internal, "NodePublishVolume both 'VolumeDir' and 'mfsSubFolder' found in VolumeContext")
-		}
+		source = ns.mountPoints[0].MfsPathToVolume(req.VolumeId)
 	}
-	log.Infof("NodeService::NodePublishVolume -- source here is %s", source)
-
 	target := req.TargetPath
 	options := req.VolumeCapability.GetMount().MountFlags
-	if req.Readonly {
+	if req.GetReadonly() {
 		options = append(options, "ro")
 	}
-
-	if err := ns.bindMount(source, target, options...); err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+	if handler, err := ns.pickHandler(req.GetVolumeContext(), req.GetPublishContext()); err != nil {
+		return nil, err
+	} else {
+		if err := handler.BindMount(source, target, options...); err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
 	}
-
 	return &csi.NodePublishVolumeResponse{}, nil
 }
 
 func (ns *NodeService) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublishVolumeRequest) (*csi.NodeUnpublishVolumeResponse, error) {
-	log.Infof("NodeServer::NodeUnpublishVolume (volume_id %s, target_path %s)", req.VolumeId, req.TargetPath)
-	ns.mfslog.Log(fmt.Sprintf("NodeServer::NodeUnpublishVolume (volume_id %s, target_path %s)", req.VolumeId, req.TargetPath))
-
+	log.Infof("NodeUnpublishVolume - VolumeId: %s, TargetPath: %s)", req.GetVolumeId(), req.GetTargetPath())
 	if req.VolumeId == "" {
-		return nil, status.Error(codes.InvalidArgument, "NodeUnpublishVolume Volume ID must be provided")
+		return nil, status.Error(codes.InvalidArgument, "NodeUnpublishVolume: Volume Id must be provided")
 	}
-
 	if req.TargetPath == "" {
-		return nil, status.Error(codes.InvalidArgument, "NodeUnpublishVolume Target Path must be provided")
+		return nil, status.Error(codes.InvalidArgument, "NodeUnpublishVolume: Target Path must be provided")
 	}
 
-	err := ns.unbindMount(req.TargetPath)
+	found, err := ns.mountPoints[0].VolumeExist(req.VolumeId)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
+	} else if !found {
+		found, err = ns.mountPoints[0].MountVolumeExist(req.VolumeId)
+		if err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		if !found {
+			return nil, status.Errorf(codes.NotFound, "NodeUnpublishVolume: volume %s not found", req.VolumeId)
+		}
 	}
-
+	if err = ns.mountPoints[0].BindUMount(req.TargetPath); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
 	return &csi.NodeUnpublishVolumeResponse{}, nil
 }
 
 func (ns *NodeService) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error) {
-	log.Infof("NodeServer::NodeGetInfo")
-
+	log.Infof("NodeGetInfo")
 	return &csi.NodeGetInfoResponse{
-		NodeId: ns.nodeID,
+		NodeId: ns.nodeId,
 	}, nil
 }
 
 func (ns *NodeService) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetCapabilitiesRequest) (*csi.NodeGetCapabilitiesResponse, error) {
-	log.Infof("NodeServer::NodeGetCapabilities")
-
+	log.Infof("NodeGetCapabilities")
 	var caps []*csi.NodeServiceCapability
-	for _, capa := range []csi.NodeServiceCapability_RPC_Type{
-		//csi.NodeServiceCapability_RPC_GET_VOLUME_STATS,
-		// csi.NodeServiceCapability_RPC_VOLUME_CONDITION,
-		//		csi.NodeServiceCapability_RPC_STAGE_UNSTAGE_VOLUME,
-	} {
+	for _, capa := range nodeCapabilities {
 		caps = append(caps, &csi.NodeServiceCapability{
 			Type: &csi.NodeServiceCapability_Rpc{
 				Rpc: &csi.NodeServiceCapability_RPC{
@@ -162,14 +143,14 @@ func (ns *NodeService) NodeGetCapabilities(ctx context.Context, req *csi.NodeGet
 			},
 		})
 	}
-
 	return &csi.NodeGetCapabilitiesResponse{
 		Capabilities: caps,
 	}, nil
 }
 
+/*
 func (ns *NodeService) NodeGetVolumeStats(ctx context.Context, req *csi.NodeGetVolumeStatsRequest) (*csi.NodeGetVolumeStatsResponse, error) {
-	log.Infof("NodeServer::NodeGetVolumeStats (volume_id %s, volume_path %s, staging_path %s)",
+	log.Infof("NodeService::NodeGetVolumeStats (volume_id %s, volume_path %s, staging_path %s)",
 		req.VolumeId, req.VolumePath, req.StagingTargetPath)
 
 	if req.VolumeId == "" {
@@ -192,64 +173,21 @@ func (ns *NodeService) NodeGetVolumeStats(ctx context.Context, req *csi.NodeGetV
 		Message:  "",
 	}}, nil
 }
-
-func (ns *NodeService) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRequest) (*csi.NodeStageVolumeResponse, error) {
-	log.Info("NodeServer::NodeStageVolume")
-	ns.mfslog.Log(fmt.Sprintf("NodeServer::NodeStageVolume (volume_id %s)", req.VolumeId))
-	return &csi.NodeStageVolumeResponse{}, nil
-	//	return nil, status.Errorf(codes.Unimplemented, "method NodeStageVolume not implemented")
-}
-
-func (ns *NodeService) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstageVolumeRequest) (*csi.NodeUnstageVolumeResponse, error) {
-	log.Info("NodeServer::NodeUnstageVolume")
-	ns.mfslog.Log(fmt.Sprintf("NodeServer::NodeUnstageVolume (volume_id %s)", req.VolumeId))
-
-	return &csi.NodeUnstageVolumeResponse{}, nil
-	//	return nil, status.Errorf(codes.Unimplemented, "method NodeUnstageVolume not implemented")
-}
-
-func (ns *NodeService) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolumeRequest) (*csi.NodeExpandVolumeResponse, error) {
-	log.Info("NodeServer::NodeExpandVolume")
-	return nil, status.Errorf(codes.Unimplemented, "method NodeExpandVolume not implemented")
-}
-
+*/
 //////////////
 
-func (ns *NodeService) bindMount(mfsSource string, target string, options ...string) error {
-	mounter := Mounter{}
-
-	ismounted, err := mounter.IsMounted(target)
-	if err != nil {
-		return err
+// pickHandler - Returns proper handler. Currently picks random mfs handler.
+func (ns *NodeService) pickHandler(volumeContext map[string]string, publishContext map[string]string) (*mfsHandler, error) {
+	if ns.mountPointsCount <= 0 {
+		return nil, status.Error(codes.Internal, "pickHandler: there is no mfs handlers")
 	}
-	if !ismounted {
-		mountId := rand.Intn(ns.mountPointsCount)
-		source := path.Join(ns.mountPoints[mountId].hostPath, mfsSource)
-		log.Infof("NodeService::bindMount -- mounting %s (%s + %s) to %s", source, ns.mountPoints[mountId].hostPath, mfsSource, target)
-		if err := mounter.Mount(source, target, fsType, append(options, "bind")...); err != nil {
-			return err
-		}
-	} else {
-		log.Infof("NodeService::bindMount -- target %s is already mounted", target)
-	}
-	return nil
+	return ns.mountPoints[rand.Uint32()%uint32(ns.mountPointsCount)], nil
 }
 
-func (ns *NodeService) unbindMount(target string) error {
-	mounter := Mounter{}
-
-	mounted, err := mounter.IsMounted(target)
-	if err != nil {
-		return err
+// pickHandlerFromVolumeId - Unimplemented, always picks first handler.
+func (ns *NodeService) pickHandlerFromVolumeId(volumeId string) (*mfsHandler, error) {
+	if ns.mountPointsCount <= 0 {
+		return nil, status.Error(codes.Internal, "pickHandlerFromVolumeId: there is no mfs handlers")
 	}
-
-	if mounted {
-		err := mounter.UMount(target)
-		if err != nil {
-			return err
-		}
-	} else {
-		log.Infof("NodeService::unbindMount -- target %s was already unmounted", target)
-	}
-	return nil
+	return ns.mountPoints[0], nil
 }

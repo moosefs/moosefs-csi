@@ -1,10 +1,10 @@
 kind: PersistentVolumeClaim
 apiVersion: v1
 metadata:
-  name: my-moosefs-mount-pvc
+  name: my-moosefs-pvc-mount
 spec:
   storageClassName: ""               # empty Storage Class
-  volumeName: my-moosefs-mount-pv
+  volumeName: my-moosefs-pv-mount
   accessModes:
     - ReadWriteMany
   resources:

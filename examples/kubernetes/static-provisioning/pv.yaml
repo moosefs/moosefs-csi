@@ -1,0 +1,13 @@
+kind: PersistentVolume
+apiVersion: v1
+metadata:
+  name: my-moosefs-pv-static
+spec:
+  storageClassName: moosefs-storage
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteMany
+  csi:
+    driver: moosefs.csi.tappest.com
+    volumeHandle: my-volume-0000

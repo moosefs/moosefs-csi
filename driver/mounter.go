@@ -28,11 +28,9 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-
-	log "github.com/sirupsen/logrus"
 )
 
-type MounterInt interface {
+type MounterInterface interface {
 	// Mount a volume
 	Mount(sourcePath string, destPath, mountType string, opts ...string) error
 
@@ -44,10 +42,10 @@ type MounterInt interface {
 }
 
 type Mounter struct {
-	MounterInt
+	MounterInterface
 }
 
-var _ MounterInt = &Mounter{}
+var _ MounterInterface = &Mounter{}
 
 type findmntResponse struct {
 	FileSystems []fileSystem `json:"filesystems"`
@@ -60,22 +58,21 @@ type fileSystem struct {
 	Options     string `json:"options"`
 }
 
-/*
- * Mounts the mooseFs filesystem
- *
- *
- */
+const (
+	mountCmd   = "mount"
+	umountCmd  = "umount"
+	findmntCmd = "findmnt"
+	newDirMode = 0750
+)
 
 func (m *Mounter) Mount(sourcePath, destPath, mountType string, opts ...string) error {
-	mountCmd := "mount"
 	mountArgs := []string{}
-
 	if sourcePath == "" {
-		return errors.New("source is not specified for mounting the volume")
+		return errors.New("Mounter::Mount -- sourcePath must be provided")
 	}
 
 	if destPath == "" {
-		return errors.New("Destination path is not specified for mounting the volume")
+		return errors.New("Mounter::Mount -- Destination path must be provided")
 	}
 
 	mountArgs = append(mountArgs, "-t", mountType)
@@ -87,64 +84,45 @@ func (m *Mounter) Mount(sourcePath, destPath, mountType string, opts ...string) 
 	mountArgs = append(mountArgs, destPath)
 
 	// create target, os.Mkdirall is noop if it exists
-	err := os.MkdirAll(destPath, 0750)
+	err := os.MkdirAll(destPath, newDirMode)
 	if err != nil {
 		return err
 	}
-	/// tutaj bug
 	out, err := exec.Command(mountCmd, mountArgs...).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("mounting failed: %v cmd: '%s %s' output: %q",
+		return fmt.Errorf("Mounter::Mount -- mounting failed: %v cmd: '%s %s' output: %q",
 			err, mountCmd, strings.Join(mountArgs, " "), string(out))
 	}
-
 	return nil
 }
 
-/*
- * Un-Mount the moooseFs filesystem
- *
- *
- *
- *
- */
-
 func (m *Mounter) UMount(destPath string) error {
-	umountCmd := "umount"
 	umountArgs := []string{}
 
 	if destPath == "" {
-		return errors.New("Destination path not specified for unmounting volume")
+		return errors.New("Mounter::UMount -- Destination path must be provided")
 	}
-
+	// todo(ad): sprawdzanie czy istnieje katalog
 	umountArgs = append(umountArgs, destPath)
 
 	out, err := exec.Command(umountCmd, umountArgs...).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("mounting failed: %v cmd: '%s %s' output: %q",
+		return fmt.Errorf("Mounter::UMount -- mounting failed: %v cmd: '%s %s' output: %q",
 			err, umountCmd, strings.Join(umountArgs, " "), string(out))
 	}
 
 	return nil
 }
 
-/*
- *	Checks if the given src and dst path are mounted
- *
- *
- *	courtesy: https://github.com/digitalocean/csi-digitalocean/blob/master/driver/mounter.go
- */
-
 func (m *Mounter) IsMounted(destPath string) (bool, error) {
 	if destPath == "" {
-		return false, errors.New("target is not specified for checking the mount")
+		return false, errors.New("Mounter::IsMounted -- target must be provided")
 	}
 
-	findmntCmd := "findmnt"
 	_, err := exec.LookPath(findmntCmd)
 	if err != nil {
 		if err == exec.ErrNotFound {
-			return false, fmt.Errorf("%q executable not found in $PATH", findmntCmd)
+			return false, fmt.Errorf("Mounter::IsMounted -- %q executable not found in $PATH", findmntCmd)
 		}
 		return false, err
 	}
@@ -156,35 +134,30 @@ func (m *Mounter) IsMounted(destPath string) (bool, error) {
 		if strings.TrimSpace(string(out)) == "" {
 			return false, nil
 		}
-
-		return false, fmt.Errorf("checking mounted failed: %v cmd: %q output: %q",
+		return false, fmt.Errorf("Mounter::IsMounted -- checking mounted failed: %v cmd: %q output: %q",
 			err, findmntCmd, string(out))
 	}
 
 	if string(out) == "" {
+		log.Warningf("Mounter::IsMounted -- %s returns no output while returning status 0 - unexpected behaviour but not an actual error", findmntCmd)
 		return false, nil
 	}
 
 	var resp *findmntResponse
 	err = json.Unmarshal(out, &resp)
 	if err != nil {
-		return false, fmt.Errorf("couldn't unmarshal data: %q: %s", string(out), err)
+		return false, fmt.Errorf("Mounter::IsMounted -- couldn't unmarshal data: %q: %s", string(out), err)
 	}
 
-	targetFound := false
 	for _, fs := range resp.FileSystems {
-		log.Infof("%s %s %s %s", fs.FsType, fs.Options, fs.Propagation, fs.Target)
-		// check if the mount is propagated correctly. It should be set to shared.
-		if fs.Propagation != "shared" {
-
-			//			return true, fmt.Errorf("mount propagation for target %q is not enabled", destPath)
+		// check if the mount is propagated correctly. It should be set to shared, unless we run sanity tests
+		if fs.Propagation != "shared" && SanityTestRun == false {
+			return true, fmt.Errorf("Mounter::IsMounted -- mount propagation for target %q is not enabled (%s instead of shared)", destPath, fs.Propagation)
 		}
-
 		// the mountpoint should match as well
 		if fs.Target == destPath {
-			targetFound = true
+			return true, nil
 		}
 	}
-
-	return targetFound, nil
+	return false, nil
 }

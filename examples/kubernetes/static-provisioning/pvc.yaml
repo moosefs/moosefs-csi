@@ -1,7 +1,7 @@
 kind: PersistentVolumeClaim
 apiVersion: v1
 metadata:
-  name: my-moosefs-pvc
+  name: my-moosefs-pvc-static
 spec:
   storageClassName: moosefs-storage
   accessModes:

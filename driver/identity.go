@@ -19,26 +19,19 @@ package driver
 import (
 	"context"
 
-	"google.golang.org/grpc"
-
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/golang/protobuf/ptypes/wrappers"
-	log "github.com/sirupsen/logrus"
 )
 
 type IdentityService struct {
-	csi.IdentityServer
+	csi.UnimplementedIdentityServer
+	Service
 }
 
 var _ csi.IdentityServer = &IdentityService{}
 
-func (is *IdentityService) Register(srv *grpc.Server) {
-	log.Infof("IdentityServer::Register")
-	csi.RegisterIdentityServer(srv, is)
-}
-
 func (is *IdentityService) GetPluginInfo(ctx context.Context, req *csi.GetPluginInfoRequest) (*csi.GetPluginInfoResponse, error) {
-	log.Infof("IdentityServer::GetPluginInfo")
+	log.Infof("GetPluginInfo")
 
 	return &csi.GetPluginInfoResponse{
 		Name:          driverName,
@@ -47,7 +40,7 @@ func (is *IdentityService) GetPluginInfo(ctx context.Context, req *csi.GetPlugin
 }
 
 func (is *IdentityService) GetPluginCapabilities(ctx context.Context, req *csi.GetPluginCapabilitiesRequest) (*csi.GetPluginCapabilitiesResponse, error) {
-	log.Infof("IdentityServer::GetPluginCapabilities")
+	log.Infof("GetPluginCapabilities")
 
 	return &csi.GetPluginCapabilitiesResponse{
 		Capabilities: []*csi.PluginCapability{
@@ -70,7 +63,7 @@ func (is *IdentityService) GetPluginCapabilities(ctx context.Context, req *csi.G
 }
 
 func (is *IdentityService) Probe(ctx context.Context, req *csi.ProbeRequest) (*csi.ProbeResponse, error) {
-	log.Infof("IdentityServer::Probe")
+	log.Infof("Probe")
 
 	return &csi.ProbeResponse{
 		Ready: &wrappers.BoolValue{
