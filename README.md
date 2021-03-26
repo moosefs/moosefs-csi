@@ -21,6 +21,7 @@ MooseFS source code can be found [on GitHub](https://github.com/moosefs/moosefs)
 
 1. Complete `deploy/kubernetes/moosefs-csi-config.yaml` configuration file with your settings:
     * `master_host` – IP address of your MooseFS Master Server(s). It is an equivalent to `-H master_host` or `-o mfsmaster=master_host` passed to MooseFS Client.
+    * `master_port` – port number of your MooseFS Master Server. It is an equivalent to `-P master_port` or `-o mfsport=master_port` passed to MooseFS Client.
     * `k8s_root_dir` – each mount's root directory on MooseFS. Each path is relative to this one. Equivalent to `-S k8s_root_dir` or `-o mfssubfolder=k8s_root_dir` passed to MooseFS Client.
     * `driver_working_dir` – a driver working directory inside MooseFS where persistent volumes, logs and metadata is stored (actual path is: `k8s_root_dir/driver_working_dir`)
     * `mount_count` – number of pre created MooseFS clients running on each node

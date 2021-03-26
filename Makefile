@@ -12,11 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-VERSION ?= 0.9.1
+MFS3VER=3.0.115
+MFS4VER=4.30.2
+DRIVER_VERSION ?= 0.9.2
+MFS3TAG=$(DRIVER_VERSION)-$(MFS3VER)
+MFS4TAG=$(DRIVER_VERSION)-$(MFS4VER)
+DEVTAG=$(DRIVER_VERSION)-dev
+
 NAME=moosefs-csi-plugin
 DOCKER_REGISTRY=registry.moosefs.pro:8443
-
-all: ready
 
 ready: clean compile
 publish: build push-image
@@ -27,27 +31,29 @@ compile:
 
 build:
 	@echo "==> Building the docker image"
-	@docker build -t $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(VERSION) cmd/moosefs-csi-plugin
+	@docker build -t $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(DEVTAG) cmd/moosefs-csi-plugin
 	@docker build -t $(DOCKER_REGISTRY)/moosefs-csi-plugin:latest cmd/moosefs-csi-plugin
 
-build-prod:
-	@echo "==> Building the docker image (PROD)"
-	@docker tag $(DOCKER_REGISTRY)/moosefs-csi-plugin:master $(DOCKER_REGISTRY)/moosefs-csi-plugin:master-backup
-	@docker build -t $(DOCKER_REGISTRY)/moosefs-csi-plugin:master cmd/moosefs-csi-plugin
-
 push-image:
-	@echo "==> Publishing $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(VERSION)"
-	@docker push $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(VERSION)
-	@docker push $(DOCKER_REGISTRY)/moosefs-csi-plugin:latest
-	@echo "==> Your image is now available at $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(VERSION)/latest"
+	@echo "==> Publishing $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(DEVTAG)"
+	@docker push $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(DEVTAG)
+	@docker push $(DOCKER_REGISTRY)/moosefs-csi-plugin:latest-dev
+	@echo "==> Your image is now available at $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(DEVTAG)"
+
+build-prod:
+#	@echo "==> Building the docker image (PROD)"
+#	@docker tag $(DOCKER_REGISTRY)/moosefs-csi-plugin:master $(DOCKER_REGISTRY)/moosefs-csi-plugin:master-backup
+	@docker build -t $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(MFS3TAG) cmd/moosefs-csi-plugin -f cmd/moosefs-csi-plugin/Dockerfile-mfs3-pro
+	@docker build -t $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(MFS4TAG) cmd/moosefs-csi-plugin -f cmd/moosefs-csi-plugin/Dockerfile-mfs4-pro
 
 push-image-prod:
-	@echo "==> Publishing $(DOCKER_REGISTRY)/moosefs-csi-plugin:master"
-	@docker push $(DOCKER_REGISTRY)/moosefs-csi-plugin:master
-	@echo "==> Your image is now available at $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(VERSION)/latest"
+#	@echo "==> Publishing $(DOCKER_REGISTRY)/moosefs-csi-plugin:master"
+	@docker push $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(MFS3TAG)
+	@docker push $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(MFS4TAG)
+#	@echo "==> Your image is now available at $(DOCKER_REGISTRY)/moosefs-csi-plugin:master"
 
 clean:
 	@echo "==> Cleaning releases"
 	@GOOS=linux go clean -i -x ./...
 
-.PHONY: all clean
+.PHONY: clean

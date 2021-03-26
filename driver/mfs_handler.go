@@ -33,13 +33,14 @@ const (
 // todo(ad): in future possibly add more options (mount options?)
 type mfsHandler struct {
 	mfsmaster      string // mfsmaster address
+	mfsmaster_port int    // mfsmaster port
 	rootPath       string // mfs root path
 	pluginDataPath string // plugin data path (inside rootPath)
 	name           string // handler name
 	hostMountPath  string // host mfs mount path
 }
 
-func NewMfsHandler(mfsmaster, rootPath, pluginDataPath, name string, num ...int) *mfsHandler {
+func NewMfsHandler(mfsmaster string, mfsmaster_port int, rootPath, pluginDataPath, name string, num ...int) *mfsHandler {
 	var numSufix = ""
 	if len(num) == 2 {
 		if num[0] == 0 && num[1] == 1 {
@@ -53,6 +54,7 @@ func NewMfsHandler(mfsmaster, rootPath, pluginDataPath, name string, num ...int)
 
 	return &mfsHandler{
 		mfsmaster:      mfsmaster,
+		mfsmaster_port: mfsmaster_port,
 		rootPath:       rootPath,
 		pluginDataPath: pluginDataPath,
 		name:           name,
@@ -201,7 +203,7 @@ func parseMfsQuotaToolsOutput(output string) (int64, error) {
 // Mount mounts mfsclient at speciefied earlier point
 func (mnt *mfsHandler) MountMfs() error {
 	mounter := Mounter{}
-	mountSource := mnt.mfsmaster + ":" + mnt.rootPath
+	mountSource := fmt.Sprintf("%s:%d:%s", mnt.mfsmaster, mnt.mfsmaster_port, mnt.rootPath)
 	mountOptions := make([]string, 0)
 
 	log.Infof("MountMfs - source: %s, target: %s, options: %v", mountSource, mnt.hostMountPath, mountOptions)

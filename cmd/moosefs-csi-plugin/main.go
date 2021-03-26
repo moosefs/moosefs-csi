@@ -28,6 +28,7 @@ func main() {
 		mode             = flag.String("mode", "value", "")
 		csiEndpoint      = flag.String("csi-endpoint", "unix:///var/lib/csi/sockets/pluginproxy/csi.sock", "CSI endpoint")
 		mfsmaster        = flag.String("master-host", "mfsmaster", "MooseFS endpoint to use (already provisioned cluster), e.g. 192.168.75.201")
+		mfsmaster_port   = flag.Int("master-port", 9421, "")
 		nodeId           = flag.String("node-id", "", "")
 		rootDir          = flag.String("root-dir", "/", "")
 		pluginDataDir    = flag.String("plugin-data-dir", "/", "")
@@ -44,20 +45,20 @@ func main() {
 		log.Infof("=============== SANITY TEST ===============")
 	}
 	// this won't be logged to mfs log file
-	log.Infof("Starting new service (mode: %s; mfsmaster-host: %s; node-id: %s; root-dir: %s; plugin-data-dir: %s)",
-		*mode, *mfsmaster, *nodeId, *rootDir, *pluginDataDir)
+	log.Infof("Starting new service (mode: %s; master-host: %s; master-port: %d; node-id: %s; root-dir: %s; plugin-data-dir: %s)",
+		*mode, *mfsmaster, *mfsmaster_port, *nodeId, *rootDir, *pluginDataDir)
 
 	var srv driver.Service
 	var err error
 	switch *mode {
 	case "node":
-		srv, err = driver.NewNodeService(*mfsmaster, *rootDir, *pluginDataDir, *nodeId, *mountPointsCount)
+		srv, err = driver.NewNodeService(*mfsmaster, *mfsmaster_port, *rootDir, *pluginDataDir, *nodeId, *mountPointsCount)
 		if err != nil {
 			log.Error("main - couldn't create node service. Error: %s", err.Error())
 			return
 		}
 	case "controller":
-		srv, err = driver.NewControllerService(*mfsmaster, *rootDir, *pluginDataDir)
+		srv, err = driver.NewControllerService(*mfsmaster, *mfsmaster_port, *rootDir, *pluginDataDir)
 		if err != nil {
 			log.Error("main - couldn't create controller service. Error: %s", err.Error())
 			return
