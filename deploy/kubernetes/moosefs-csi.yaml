@@ -226,7 +226,7 @@ spec:
             - "--mode=controller"
             - "--csi-endpoint=$(CSI_ENDPOINT)"
             - "--master-host=$(MASTER_HOST)"
-            - "--master_port=$(MASTER_PORT)"
+            - "--master-port=$(MASTER_PORT)"
             - "--root-dir=$(ROOT_DIR)"
             - "--plugin-data-dir=$(WORKING_DIR)"
             - "--mfs-logging=$(MFS_LOGGING)"
