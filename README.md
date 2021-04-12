@@ -7,7 +7,7 @@ MooseFS source code can be found [on GitHub](https://github.com/moosefs/moosefs)
 
 ---
 
-*Note that on each node a pool of MooseFS Clients that are available for use by containers is created. By default the number of MooseFS Clients in the pool is `1`.*
+*Note that a pool of MooseFS Clients that are available for use by containers is created on each node. By default the number of MooseFS Clients in the pool is `1`.*
 
 ## Installation on Kubernetes
 
@@ -19,7 +19,7 @@ MooseFS source code can be found [on GitHub](https://github.com/moosefs/moosefs)
 
 ### Deployment
 
-1. Complete `deploy/kubernetes/moosefs-csi-config.yaml` configuration file with your settings:
+1. Complete `deploy/kubernetes/csi-moosefs-config.yaml` configuration file with your settings:
     * `master_host` – IP address of your MooseFS Master Server(s). It is an equivalent to `-H master_host` or `-o mfsmaster=master_host` passed to MooseFS Client.
     * `master_port` – port number of your MooseFS Master Server. It is an equivalent to `-P master_port` or `-o mfsport=master_port` passed to MooseFS Client.
     * `k8s_root_dir` – each mount's root directory on MooseFS. Each path is relative to this one. Equivalent to `-S k8s_root_dir` or `-o mfssubfolder=k8s_root_dir` passed to MooseFS Client.
@@ -29,7 +29,7 @@ MooseFS source code can be found [on GitHub](https://github.com/moosefs/moosefs)
     * `mfs_logging` – driver can create logs from each component in `k8s_root_dir/driver_working_dir/logs` directory. Boolean `"true"`/`"false"` value.
 
     ```
-    $ kubectl apply -f deploy/kubernetes/moosefs-csi-config.yaml
+    $ kubectl apply -f deploy/kubernetes/csi-moosefs-config.yaml
     ```
 
 2. ConfigMap should now be created:
@@ -43,7 +43,7 @@ MooseFS source code can be found [on GitHub](https://github.com/moosefs/moosefs)
 3. Deploy CSI MooseFS plugin along with CSI Sidecar Containers:
 
     ```
-    $ kubectl apply -f deploy/kubernetes/moosefs-csi.yaml
+    $ kubectl apply -f deploy/kubernetes/csi-moosefs.yaml
     ```
 
 4. Ensure that all the containers are ready, up and running
@@ -218,7 +218,7 @@ spec:
 
 | Kubernetes | MooseFS CSI Driver |
 |:---:|:---:|
-| `v1.18.5` | `v0.9.1`|
+| `v1.18.5` | `v0.9.2`|
 
 ## License
 [Apache v2 license](https://www.apache.org/licenses/LICENSE-2.0)
