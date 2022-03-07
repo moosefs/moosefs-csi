@@ -1,4 +1,5 @@
 # Container Storage Interface (CSI) driver for MooseFS
+
 [Container storage interface](https://github.com/container-storage-interface/spec) is an [industry standard](https://github.com/container-storage-interface/spec/blob/master/spec.md) that enables storage vendors to develop a plugin once and have it work across a number of container orchestration systems.
 
 [MooseFS](https://moosefs.com) is a petabyte Open-Source distributed file system. It aims to be fault-tolerant, highly available, highly performing, scalable general-purpose network distributed file system for data centers.
@@ -98,6 +99,7 @@ MooseFS source code can be found [on GitHub](https://github.com/moosefs/moosefs)
     $ kubectl delete -f examples/kubernetes/dynamic-provisioning/pod.yaml
     $ kubectl delete -f examples/kubernetes/dynamic-provisioning/pvc.yaml
     ```
+
 ## More examples and capabilities
 
 ### Volume Expansion
@@ -220,8 +222,20 @@ spec:
 |:---:|:---:|
 | `v1.18.5` | `v0.9.2`|
 
+## Copyright
+
+Copyright (c) 2020-2021 Tappest sp. z o.o.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at [http://www.apache.org/licenses/LICENSE-2.0](https://www.apache.org/licenses/LICENSE-2.0).
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+
+See the License for the specific language governing permissions and limitations under the License.
+
 ## License
-[Apache v2 license](https://www.apache.org/licenses/LICENSE-2.0)
+
+[Apache License, Version 2.0](https://www.apache.org/licenses/LICENSE-2.0)
 
 ## Code of conduct
+
 Participation in this project is governed by [Kubernetes/CNCF code of conduct](https://github.com/kubernetes/community/blob/master/code-of-conduct.md)
