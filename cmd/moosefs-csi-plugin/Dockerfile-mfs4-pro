@@ -22,7 +22,7 @@ RUN apt update && \
 
 # Add key
 RUN wget -O - http://ppa.moosefs.com/moosefs.key | apt-key add -
-RUN echo "deb http://ppa.moosefs.com/4.32.0/apt/debian/buster buster main" > /etc/apt/sources.list.d/moosefs.list
+RUN echo "deb http://ppa.moosefs.com/4.42.0/apt/debian/buster buster main" > /etc/apt/sources.list.d/moosefs.list
 
 # Install MooseFS client
 RUN apt update --allow-releaseinfo-change && apt install -y moosefs-pro-client
