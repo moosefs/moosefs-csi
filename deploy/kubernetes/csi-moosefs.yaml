@@ -2,7 +2,7 @@
 apiVersion: storage.k8s.io/v1
 kind: CSIDriver
 metadata:
-  name: moosefs.csi.saglabs.com
+  name: csi.moosefs.com
 spec:
   attachRequired: true
   podInfoOnMount: false
@@ -14,7 +14,7 @@ metadata:
   namespace: kube-system
   annotations:
     storageclass.kubernetes.io/is-default-class: "true"
-provisioner: moosefs.csi.saglabs.com
+provisioner: csi.moosefs.com
 allowVolumeExpansion: true
 ---
 
@@ -296,7 +296,7 @@ spec:
             - name: ADDRESS
               value: /csi/csi.sock
             - name: DRIVER_REG_SOCK_PATH
-              value: /var/lib/kubelet/plugins/moosefs.csi.saglabs.com/csi.sock
+              value: /var/lib/kubelet/plugins/csi.moosefs.com/csi.sock
             - name: KUBE_NODE_NAME
               valueFrom:
                 fieldRef:
@@ -377,7 +377,7 @@ spec:
             type: Directory
         - name: plugin-dir
           hostPath:
-            path: /var/lib/kubelet/plugins/moosefs.csi.saglabs.com
+            path: /var/lib/kubelet/plugins/csi.moosefs.com
             type: DirectoryOrCreate
         - name: pods-mount-dir
           hostPath:

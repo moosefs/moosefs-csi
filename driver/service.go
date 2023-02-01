@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	driverName    = "moosefs.csi.saglabs.com"
+	driverName    = "csi.moosefs.com"
 	driverVersion = "0.9.1-dev"
 )
 
