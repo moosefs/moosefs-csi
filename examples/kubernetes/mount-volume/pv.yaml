@@ -9,7 +9,7 @@ spec:
   accessModes:
     - ReadWriteMany
   csi:
-    driver: moosefs.csi.tappest.com
+    driver: moosefs.csi.saglabs.com
     volumeHandle: my-mount-volume    # unique volume name
     volumeAttributes:
       mfsSubDir: "/"                 # subfolder to be mounted as a rootdir (inside k8s_root_dir)

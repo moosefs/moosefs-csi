@@ -130,7 +130,7 @@ It is possible to mount any MooseFS directory inside containers using static pro
       accessModes:
         - ReadWriteMany
       csi:
-        driver: moosefs.csi.tappest.com
+        driver: moosefs.csi.saglabs.com
         volumeHandle: my-mount-volume   # unique volume name
         volumeAttributes:
           mfsSubDir: "/"                 # subdirectory to be mounted as a rootdir (inside k8s_root_dir)
@@ -224,7 +224,7 @@ spec:
 
 ## Copyright
 
-Copyright (c) 2020-2021 Tappest sp. z o.o.
+Copyright (c) 2020-2023 Saglabs SA
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at [http://www.apache.org/licenses/LICENSE-2.0](https://www.apache.org/licenses/LICENSE-2.0).
 

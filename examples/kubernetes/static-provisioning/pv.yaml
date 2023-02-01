@@ -9,5 +9,5 @@ spec:
   accessModes:
     - ReadWriteMany
   csi:
-    driver: moosefs.csi.tappest.com
+    driver: moosefs.csi.saglabs.com
     volumeHandle: my-volume-0000
