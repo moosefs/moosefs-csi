@@ -21,7 +21,7 @@ MFS4TAGPRO=$(DRIVER_VERSION)-$(MFS4VER)-pro
 DEVTAG=$(DRIVER_VERSION)-dev
 
 NAME=moosefs-csi-plugin
-DOCKER_REGISTRY=registry.moosefs.pro:8443
+DOCKER_REGISTRY=registry.moosefs.com:8443
 
 ready: clean compile
 publish: build push-image
