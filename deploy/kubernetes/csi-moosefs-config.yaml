@@ -4,10 +4,10 @@ metadata:
   namespace: kube-system
   name: csi-moosefs-config
 data:
-  master_host: "192.168.40.0"
+  master_host: "192.168.40.0"           # domain name is recommended, this IP is only an example
   master_port: "19421"
-#  master_host: "172.17.2.80"
-#  master_port: "9421"
+# master_host: "172.17.2.80"
+# master_port: "9421"
   k8s_root_dir: "/"                     # MooseFS root directory for all claims within this Kubernetes cluster
   driver_working_dir: "pv_data"         # MooseFS directory (relative to csi_root_dir) for all driver data
                                         # (effective working dir will be calculated as k8s_root_dir/driver_working_dir)

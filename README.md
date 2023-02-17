@@ -18,10 +18,11 @@ MooseFS source code can be found [on GitHub](https://github.com/moosefs/moosefs)
 
 * `--allow-privileged=true` flag set for both API server and kubelet (default value for kubelet is `true`)
 
-### Deployment
+### **Deployment**
 
-1. Complete `deploy/kubernetes/csi-moosefs-config.yaml` configuration file with your settings:
-    * `master_host` – IP address of your MooseFS Master Server(s). It is an equivalent to `-H master_host` or `-o mfsmaster=master_host` passed to MooseFS Client.
+1.  Complete `deploy/kubernetes/csi-moosefs-config.yaml` configuration file with your settings:
+
+    * `master_host` – domain name (**recommended**) or IP address of your MooseFS Master Server(s). It is an equivalent to `-H master_host` or `-o mfsmaster=master_host` passed to MooseFS Client.
     * `master_port` – port number of your MooseFS Master Server. It is an equivalent to `-P master_port` or `-o mfsport=master_port` passed to MooseFS Client.
     * `k8s_root_dir` – each mount's root directory on MooseFS. Each path is relative to this one. Equivalent to `-S k8s_root_dir` or `-o mfssubfolder=k8s_root_dir` passed to MooseFS Client.
     * `driver_working_dir` – a driver working directory inside MooseFS where persistent volumes, logs and metadata is stored (actual path is: `k8s_root_dir/driver_working_dir`)
@@ -33,7 +34,7 @@ MooseFS source code can be found [on GitHub](https://github.com/moosefs/moosefs)
     $ kubectl apply -f deploy/kubernetes/csi-moosefs-config.yaml
     ```
 
-2. ConfigMap should now be created:
+2.  ConfigMap should now be created:
 
     ```
     $ kubectl get configmap -n kube-system
@@ -41,13 +42,25 @@ MooseFS source code can be found [on GitHub](https://github.com/moosefs/moosefs)
     csi-moosefs-config                   6      42s
     ```
 
-3. Deploy CSI MooseFS plugin along with CSI Sidecar Containers:
+3.  Update `deploy/kubernetes/csi-moosefs.yaml` file with the image that uses required MooseFS or MooseFS Pro version and MooseFS CSI Plugin version. Default images are the latest version of the plugin and the latest version of MooseFS (Community):
+
+    * Find plugin named `csi-moosefs-plugin`
+    * Update the `image` version suffix in the plugin's section accordingly, for example:
+        * `0.9.4-3.0.117` – for plugin version 0.9.4 and MooseFS Community 3.0.117
+        * `0.9.4-4.44.4-pro` – for plugin version 0.9.4 and MooseFS Pro 4.44.4
+
+      You can find the list of available image versions at: \
+      https://registry.moosefs.com/v2/moosefs-csi-plugin/tags/list.
+
+      **Note there are two occurrences of `csi-moosefs-plugin` in `csi-moosefs.yaml` file and it is necessary to update the image version in both places of the file.**
+
+4.  Deploy CSI MooseFS plugin along with CSI Sidecar Containers:
 
     ```
     $ kubectl apply -f deploy/kubernetes/csi-moosefs.yaml
     ```
 
-4. Ensure that all the containers are ready, up and running
+5.  Ensure that all the containers are ready, up and running
 
     ```
     kube@k-master:~$ kubectl get pods -n kube-system | grep csi-moosefs
@@ -61,15 +74,15 @@ MooseFS source code can be found [on GitHub](https://github.com/moosefs/moosefs)
 
     You may also take a look at your MooseFS CGI Monitoring Interface ("Mounts" tab) to check if new Clients are connected – mount points: `/mnt/controller` and `/mnt/${nodeId}[_${mountId}]`.
 
-### Verification
+### **Verification**
 
-1. Create a persistent volume claim for 5 GiB:
+1.  Create a persistent volume claim for 5 GiB:
 
     ```
     $ kubectl apply -f examples/kubernetes/dynamic-provisioning/pvc.yaml
     ```
 
-2. Verify if the persistent volume claim exists and wait until it's STATUS is `Bound`:
+2.  Verify if the persistent volume claim exists and wait until it's STATUS is `Bound`:
 
     ```
     $ kubectl get pvc
@@ -77,13 +90,13 @@ MooseFS source code can be found [on GitHub](https://github.com/moosefs/moosefs)
     my-moosefs-pvc   Bound    pvc-a62451d4-0d75-4f81-bfb3-8402c59bfc25   5Gi        RWX            moosefs-storage   69m
     ```
 
-3. After its in `Bound` state, create a sample workload that mounts the volume:
+3.  After its in `Bound` state, create a sample workload that mounts the volume:
 
     ```
     $ kubectl apply -f examples/kubernetes/dynamic-provisioning/pod.yaml
     ```
 
-4. Verify the storage is mounted:
+4.  Verify the storage is mounted:
 
     ```
     $ kubectl exec my-moosefs-pod -- df -h /data
@@ -91,9 +104,9 @@ MooseFS source code can be found [on GitHub](https://github.com/moosefs/moosefs)
     172.17.2.80:9421          4.2T      1.4T      2.8T  33% /data
     ```
    
-   You may take a look at MooseFS CGI Monitoring Interface ("Quotas" tab) to check if a quota for 5 GiB on a newly created volume directory has been set. Dynamically provisioned volumes are stored on MooseFS in `k8s_root_dir/driver_working_dir/volumes` directory.
+    You may take a look at MooseFS CGI Monitoring Interface ("Quotas" tab) to check if a quota for 5 GiB on a newly created volume directory has been set. Dynamically provisioned volumes are stored on MooseFS in `k8s_root_dir/driver_working_dir/volumes` directory.
    
-5. Clean up:
+5.  Clean up:
 
     ```
     $ kubectl delete -f examples/kubernetes/dynamic-provisioning/pod.yaml
@@ -116,7 +129,7 @@ Volumes can be also provisioned statically by creating or using a existing direc
 
 It is possible to mount any MooseFS directory inside containers using static provisioning.
 
-1. Create a Persistent Volume (`examples/kubernetes/mount-volume/pv.yaml`):
+1.  Create a Persistent Volume (`examples/kubernetes/mount-volume/pv.yaml`):
 
     ```
     kind: PersistentVolume
@@ -136,7 +149,7 @@ It is possible to mount any MooseFS directory inside containers using static pro
           mfsSubDir: "/"                 # subdirectory to be mounted as a rootdir (inside k8s_root_dir)
     ```
    
-2. Create corresponding Persistent Volume Claim (`examples/kubernetes/mount-volume/pvc.yaml`):
+2.  Create corresponding Persistent Volume Claim (`examples/kubernetes/mount-volume/pvc.yaml`):
 
     ```
     kind: PersistentVolumeClaim
@@ -153,14 +166,14 @@ It is possible to mount any MooseFS directory inside containers using static pro
           storage: 1Gi                   # at least as much as in PV, does not have any effect
     ```   
    
-3. Apply both configurations:
+3.  Apply both configurations:
 
     ```
     $ kubectl apply -f examples/kubernetes/mount-volume/pv.yaml
     $ kubectl apply -f examples/kubernetes/mount-volume/pvc.yaml
     ```
    
-4. Verify that PVC exists and wait until it is bound to the previously created PV:
+4.  Verify that PVC exists and wait until it is bound to the previously created PV:
 
     ```
     $ kubectl get pvc
@@ -168,13 +181,13 @@ It is possible to mount any MooseFS directory inside containers using static pro
     my-moosefs-pvc-mount    Bound     my-moosefs-pv-mount   1Gi        RWX                           23m
     ```
    
-5. Create a sample workload that mounts the volume:
+5.  Create a sample workload that mounts the volume:
 
     ```
     $ kubectl apply -f examples/kubernetes/mount-volume/pod.yaml
     ```
    
-6. Verify that the storage is mounted:
+6.  Verify that the storage is mounted:
 
     ```
     $ kubectl exec -it my-moosefs-pod-mount -- ls /data
@@ -182,7 +195,7 @@ It is possible to mount any MooseFS directory inside containers using static pro
    
    You should see the content of `k8s_root_dir/mfsSubDir`.
    
-7. Clean up:
+7.  Clean up:
 
     ```
     $ kubectl delete -f examples/kubernetes/mount-volume/pod.yaml

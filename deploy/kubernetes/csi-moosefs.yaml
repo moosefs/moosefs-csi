@@ -214,7 +214,7 @@ spec:
           volumeMounts:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
-        # Moosefs Plugin
+        # MooseFS CSI Plugin
         - name: csi-moosefs-plugin
           securityContext:
             privileged: true
@@ -306,7 +306,7 @@ spec:
               mountPath: /csi/
             - name: registration-dir
               mountPath: /registration/
-        # moosefs csi plugin
+        # MooseFS CSI Plugin
         - name: csi-moosefs-plugin
           securityContext:
             privileged: true
