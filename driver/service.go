@@ -34,7 +34,7 @@ import (
 
 const (
 	driverName    = "csi.moosefs.com"
-	driverVersion = "0.9.1-dev"
+	driverVersion = "0.9.4"
 )
 
 type Service interface{}

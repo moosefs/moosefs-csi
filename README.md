@@ -233,7 +233,7 @@ spec:
 
 | Kubernetes | MooseFS CSI Driver |
 |:---:|:---:|
-| `v1.18.5` | `v0.9.2`|
+| `v1.18.5` | `v0.9.4`|
 
 ## Copyright
 
