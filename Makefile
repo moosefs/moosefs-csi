@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-MFS3VER=3.0.116
-MFS4VER=4.42.0
+MFS3VER=3.0.117
+MFS4VER=4.44.4
 DRIVER_VERSION ?= 0.9.2
 MFS3TAGCE=$(DRIVER_VERSION)-$(MFS3VER)
 MFS3TAGPRO=$(DRIVER_VERSION)-$(MFS3VER)-pro
