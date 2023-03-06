@@ -49,7 +49,7 @@ MooseFS source code can be found [on GitHub](https://github.com/moosefs/moosefs)
         * `0.9.4-3.0.117` – for plugin version 0.9.4 and MooseFS Community 3.0.117
         * `0.9.4-4.44.4-pro` – for plugin version 0.9.4 and MooseFS Pro 4.44.4
 
-      You can find the list of available image versions at: \
+      You can find a complete list of available images at: \
       https://registry.moosefs.com/v2/moosefs-csi-plugin/tags/list.
 
       **Note there are two occurrences of `csi-moosefs-plugin` in `csi-moosefs.yaml` file and it is necessary to update the image version in both places of the file.**
@@ -232,8 +232,9 @@ spec:
 ## Version Compatibility
 
 | Kubernetes | MooseFS CSI Driver |
-|:---:|:---:|
-| `v1.18.5` | `v0.9.4`|
+|:----------:|:------------------:|
+| `v1.26.2`  |      `v0.9.4`      |
+| `v1.24.2`  |      `v0.9.4`      |
 
 ## Copyright
 
