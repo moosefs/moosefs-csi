@@ -33,12 +33,10 @@ compile:
 build-dev:
 	@echo "==> Building DEV docker images"
 	@docker build -t $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(DEVTAG) cmd/moosefs-csi-plugin
-	@docker build -t $(DOCKER_REGISTRY)/moosefs-csi-plugin:latest-dev cmd/moosefs-csi-plugin
 
 push-dev:
 	@echo "==> Publishing DEV $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(DEVTAG)"
 	@docker push $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(DEVTAG)
-	@docker push $(DOCKER_REGISTRY)/moosefs-csi-plugin:latest-dev
 	@echo "==> Your DEV image is now available at $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(DEVTAG)"
 
 build-prod:
