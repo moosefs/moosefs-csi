@@ -60,10 +60,10 @@ type ControllerService struct {
 
 var _ csi.ControllerServer = &ControllerService{}
 
-func NewControllerService(mfsmaster string, mfsmaster_port int, rootPath, pluginDataPath string) (*ControllerService, error) {
+func NewControllerService(mfsmaster string, mfsmaster_port int, rootPath, pluginDataPath, mfsMountOptions string) (*ControllerService, error) {
 	log.Infof("NewControllerService creation - mfsmaster %s, rootDir %s, pluginDataDir %s)", mfsmaster, rootPath, pluginDataPath)
 
-	ctlMount := NewMfsHandler(mfsmaster, mfsmaster_port, rootPath, pluginDataPath, "controller")
+	ctlMount := NewMfsHandler(mfsmaster, mfsmaster_port, rootPath, pluginDataPath, "controller", mfsMountOptions)
 	if err := ctlMount.MountMfs(); err != nil {
 		return nil, err
 	}

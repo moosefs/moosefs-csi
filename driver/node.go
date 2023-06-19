@@ -42,12 +42,12 @@ var nodeCapabilities = []csi.NodeServiceCapability_RPC_Type{
 	//		csi.NodeServiceCapability_RPC_STAGE_UNSTAGE_VOLUME,
 }
 
-func NewNodeService(mfsmaster string, mfsmaster_port int, rootPath, pluginDataPath, nodeId string, mountPointsCount int) (*NodeService, error) {
+func NewNodeService(mfsmaster string, mfsmaster_port int, rootPath, pluginDataPath, nodeId, mfsMountOptions string, mountPointsCount int) (*NodeService, error) {
 	log.Infof("NewNodeService creation (mfsmaster %s, rootDir %s, pluginDataDir %s, nodeId %s, mountPointsCount %d)", mfsmaster, rootPath, pluginDataPath, nodeId, mountPointsCount)
 
 	mountPoints := make([]*mfsHandler, mountPointsCount)
 	for i := 0; i < mountPointsCount; i++ {
-		mountPoints[i] = NewMfsHandler(mfsmaster, mfsmaster_port, rootPath, pluginDataPath, nodeId, i, mountPointsCount)
+		mountPoints[i] = NewMfsHandler(mfsmaster, mfsmaster_port, rootPath, pluginDataPath, nodeId, mfsMountOptions, i, mountPointsCount)
 		if err := mountPoints[i].MountMfs(); err != nil {
 			return nil, err
 		}

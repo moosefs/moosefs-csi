@@ -45,16 +45,19 @@ const (
 
 // todo(ad): in future possibly add more options (mount options?)
 type mfsHandler struct {
-	mfsmaster      string // mfsmaster address
-	mfsmaster_port int    // mfsmaster port
-	rootPath       string // mfs root path
-	pluginDataPath string // plugin data path (inside rootPath)
-	name           string // handler name
-	hostMountPath  string // host mfs mount path
+	mfsmaster       string // mfsmaster address
+	mfsmaster_port  int    // mfsmaster port
+	rootPath        string // mfs root path
+	pluginDataPath  string // plugin data path (inside rootPath)
+	name            string // handler name
+	hostMountPath   string // host mfs mount path
+	mfsMountOptions string // mfsmount additional options
 }
 
-func NewMfsHandler(mfsmaster string, mfsmaster_port int, rootPath, pluginDataPath, name string, num ...int) *mfsHandler {
+func NewMfsHandler(mfsmaster string, mfsmaster_port int, rootPath, pluginDataPath, name, mfsMountOptions string, num ...int) *mfsHandler {
 	var numSufix = ""
+	var mountOptions = ""
+
 	if len(num) == 2 {
 		if num[0] == 0 && num[1] == 1 {
 			numSufix = ""
@@ -65,13 +68,18 @@ func NewMfsHandler(mfsmaster string, mfsmaster_port int, rootPath, pluginDataPat
 		log.Errorf("NewMfsHandler - Unexpected number of arguments: %d; expected 0 or 2", len(num))
 	}
 
+	if len(mfsMountOptions) != 0 {
+		mountOptions = mfsMountOptions
+	}
+
 	return &mfsHandler{
-		mfsmaster:      mfsmaster,
-		mfsmaster_port: mfsmaster_port,
-		rootPath:       rootPath,
-		pluginDataPath: pluginDataPath,
-		name:           name,
-		hostMountPath:  path.Join(mntDir, fmt.Sprintf("%s%s", name, numSufix)),
+		mfsmaster:       mfsmaster,
+		mfsmaster_port:  mfsmaster_port,
+		rootPath:        rootPath,
+		pluginDataPath:  pluginDataPath,
+		name:            name,
+		hostMountPath:   path.Join(mntDir, fmt.Sprintf("%s%s", name, numSufix)),
+		mfsMountOptions: mountOptions,
 	}
 }
 
@@ -217,9 +225,15 @@ func parseMfsQuotaToolsOutput(output string) (int64, error) {
 
 // Mount mounts mfsclient at speciefied earlier point
 func (mnt *mfsHandler) MountMfs() error {
+	var mountOptions []string
 	mounter := Mounter{}
 	mountSource := fmt.Sprintf("%s:%d:%s", mnt.mfsmaster, mnt.mfsmaster_port, mnt.rootPath)
-	mountOptions := make([]string, 0)
+
+	if len(mnt.mfsMountOptions) != 0 {
+		mountOptions = strings.Split(mnt.mfsMountOptions, ",")
+	} else {
+		mountOptions = make([]string, 0)
+	}
 
 	log.Infof("MountMfs - source: %s, target: %s, options: %v", mountSource, mnt.hostMountPath, mountOptions)
 
