@@ -14,7 +14,7 @@
 
 MFS3VER=3.0.117
 MFS4VER=4.44.4
-DRIVER_VERSION ?= 0.9.4
+DRIVER_VERSION ?= 0.9.6
 MFS3TAGCE=$(DRIVER_VERSION)-$(MFS3VER)
 MFS3TAGPRO=$(DRIVER_VERSION)-$(MFS3VER)-pro
 MFS4TAGPRO=$(DRIVER_VERSION)-$(MFS4VER)-pro
@@ -33,11 +33,13 @@ compile:
 build-dev:
 	@echo "==> Building DEV docker images"
 	@docker build -t $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(DEVTAG) cmd/moosefs-csi-plugin
+	@docker build -t $(DOCKER_REGISTRY)/moosefs-csi-plugin:latest-dev cmd/moosefs-csi-plugin
 
 push-dev:
 	@echo "==> Publishing DEV $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(DEVTAG)"
 	@docker push $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(DEVTAG)
-	@echo "==> Your DEV image is now available at $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(DEVTAG)"
+	@docker push $(DOCKER_REGISTRY)/moosefs-csi-plugin:latest-dev
+	@echo "==> Your DEV image is now available at $(DOCKER_REGISTRY)/alex/moosefs-csi-plugin:$(DEVTAG)"
 
 build-prod:
 	@docker build -t $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(MFS3TAGCE) cmd/moosefs-csi-plugin -f cmd/moosefs-csi-plugin/Dockerfile-mfs3-ce

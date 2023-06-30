@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  namespace: kube-system
+  name: csi-moosefs-config
+data:
+  # MooseFS master hostname or IP
+  master_host: "mfsmaster"
+  # MooseFS master port
+  master_port: "9421"
+  # MooseFS root directory for all claims within this Kubernetes cluster
+  k8s_root_dir: "/"
+  # MooseFS directory (relative to csi_root_dir) for all driver data
+  # (effective working dir will be calculated as k8s_root_dir/driver_working_dir)
+  driver_working_dir: "pv_data"
+  # Number of pre-created MooseFS mounts on each node
+  mount_count: "1"
+  # Should driver log to k8s_root_dir/driver_working_dir/logs directory
+  mfs_logging: "true"
+  # Additional mfsmount options
+  mfs_mount_options: "mfsmd5pass=[MD5 hash]"

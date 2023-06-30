@@ -30,34 +30,34 @@ import (
 )
 
 const (
-	fsType        = "moosefs"
-	newVolumeMode = 0755
-	getQuotaCmd   = "mfsgetquota"
-	setQuotaCmd   = "mfssetquota"
-	// maybe configurable later
-	quotaLimitType = "-L"
-	quotaLimitRow  = 2
-
-	quotaLimitCol = 3
-
-	logsDirName    = "logs"
-	volumesDirName = "volumes"
-
-	mntDir = "/mnt"
+	fsType          = "moosefs"
+	newVolumeMode   = 0755
+	getQuotaCmd     = "mfsgetquota"
+	setQuotaCmd     = "mfssetquota"
+	quotaLimitType  = "-L"
+	quotaLimitRow   = 2
+	quotaLimitCol   = 3
+	logsDirName     = "logs"
+	volumesDirName  = "volumes"
+	mvolumesDirName = "mount_volumes"
+	mntDir          = "/mnt"
 )
 
 // todo(ad): in future possibly add more options (mount options?)
 type mfsHandler struct {
-	mfsmaster      string // mfsmaster address
-	mfsmaster_port int    // mfsmaster port
-	rootPath       string // mfs root path
-	pluginDataPath string // plugin data path (inside rootPath)
-	name           string // handler name
-	hostMountPath  string // host mfs mount path
+	mfsmaster       string // mfsmaster address
+	mfsmaster_port  int    // mfsmaster port
+	rootPath        string // mfs root path
+	pluginDataPath  string // plugin data path (inside rootPath)
+	name            string // handler name
+	hostMountPath   string // host mfs mount path
+	mfsMountOptions string // mfsmount additional options
 }
 
-func NewMfsHandler(mfsmaster string, mfsmaster_port int, rootPath, pluginDataPath, name string, num ...int) *mfsHandler {
+func NewMfsHandler(mfsmaster string, mfsmaster_port int, rootPath, pluginDataPath, name, mfsMountOptions string, num ...int) *mfsHandler {
 	var numSufix = ""
+	var mountOptions = ""
+
 	if len(num) == 2 {
 		if num[0] == 0 && num[1] == 1 {
 			numSufix = ""
@@ -68,13 +68,18 @@ func NewMfsHandler(mfsmaster string, mfsmaster_port int, rootPath, pluginDataPat
 		log.Errorf("NewMfsHandler - Unexpected number of arguments: %d; expected 0 or 2", len(num))
 	}
 
+	if len(mfsMountOptions) != 0 {
+		mountOptions = mfsMountOptions
+	}
+
 	return &mfsHandler{
-		mfsmaster:      mfsmaster,
-		mfsmaster_port: mfsmaster_port,
-		rootPath:       rootPath,
-		pluginDataPath: pluginDataPath,
-		name:           name,
-		hostMountPath:  path.Join(mntDir, fmt.Sprintf("%s%s", name, numSufix)),
+		mfsmaster:       mfsmaster,
+		mfsmaster_port:  mfsmaster_port,
+		rootPath:        rootPath,
+		pluginDataPath:  pluginDataPath,
+		name:            name,
+		hostMountPath:   path.Join(mntDir, fmt.Sprintf("%s%s", name, numSufix)),
+		mfsMountOptions: mountOptions,
 	}
 }
 
@@ -154,10 +159,11 @@ func (mnt *mfsHandler) DeleteVolume(volumeId string) error {
 func (mnt *mfsHandler) GetQuota(volumeId string) (int64, error) {
 	log.Infof("GetQuota - volumeId: %s", volumeId)
 
-	path := mnt.MfsPathToVolume(volumeId)
+	//path := mnt.MfsPathToVolume(volumeId)
+	path := mnt.HostPathToVolume(volumeId)
 
 	cmd := exec.Command(getQuotaCmd, path)
-	cmd.Dir = mnt.hostMountPath
+	//cmd.Dir = mnt.hostMountPath
 	out, err := cmd.CombinedOutput()
 
 	if err != nil {
@@ -175,13 +181,14 @@ func (mnt *mfsHandler) GetQuota(volumeId string) (int64, error) {
 func (mnt *mfsHandler) SetQuota(volumeId string, size int64) (int64, error) {
 	log.Infof("SetQuota - volumeId: %s, size: %d", volumeId, size)
 
-	path := mnt.MfsPathToVolume(volumeId)
+	//path := mnt.MfsPathToVolume(volumeId)
+	path := mnt.HostPathToVolume(volumeId)
 	if size <= 0 {
 		return 0, errors.New("SetQuota: size must be positive")
 	}
 	setQuotaArgs := []string{quotaLimitType, strconv.FormatInt(size, 10), path}
 	cmd := exec.Command(setQuotaCmd, setQuotaArgs...)
-	cmd.Dir = mnt.hostMountPath
+	//cmd.Dir = mnt.hostMountPath
 	out, err := cmd.CombinedOutput()
 
 	if err != nil {
@@ -199,11 +206,11 @@ func (mnt *mfsHandler) SetQuota(volumeId string, size int64) (int64, error) {
 func parseMfsQuotaToolsOutput(output string) (int64, error) {
 	lines := strings.Split(output, "\n")
 	if len(lines) <= quotaLimitRow {
-		return 0, fmt.Errorf("Error while parsing quota tool output (less rows than expected); output: %s", output)
+		return 0, fmt.Errorf("error while parsing quota tool output (less rows than expected); output: %s", output)
 	}
 	cols := strings.Split(lines[quotaLimitRow], "|")
 	if len(cols) < 5 {
-		return 0, fmt.Errorf("Error while parsing quota tool output (less columns than expected); output: %s", output)
+		return 0, fmt.Errorf("error while parsing quota tool output (less columns than expected); output: %s", output)
 	}
 	s := strings.TrimSpace(cols[quotaLimitCol])
 	if s == "-" {
@@ -218,9 +225,15 @@ func parseMfsQuotaToolsOutput(output string) (int64, error) {
 
 // Mount mounts mfsclient at speciefied earlier point
 func (mnt *mfsHandler) MountMfs() error {
+	var mountOptions []string
 	mounter := Mounter{}
 	mountSource := fmt.Sprintf("%s:%d:%s", mnt.mfsmaster, mnt.mfsmaster_port, mnt.rootPath)
-	mountOptions := make([]string, 0)
+
+	if len(mnt.mfsMountOptions) != 0 {
+		mountOptions = strings.Split(mnt.mfsMountOptions, ",")
+	} else {
+		mountOptions = make([]string, 0)
+	}
 
 	log.Infof("MountMfs - source: %s, target: %s, options: %v", mountSource, mnt.hostMountPath, mountOptions)
 
@@ -275,16 +288,15 @@ func (mnt *mfsHandler) BindUMount(target string) error {
 
 // HostPathToVolume returns absoluthe path to given volumeId on host mfsclient mountpoint
 func (mnt *mfsHandler) HostPathToVolume(volumeId string) string {
-	return path.Join(mnt.hostMountPath, mnt.pluginDataPath, "volumes", volumeId)
+	return path.Join(mnt.hostMountPath, mnt.pluginDataPath, volumesDirName, volumeId)
+}
+
+func (mnt *mfsHandler) MfsPathToVolume(volumeId string) string {
+	return path.Join(mnt.pluginDataPath, volumesDirName, volumeId)
 }
 
 func (mnt *mfsHandler) HostPathToMountVolume(volumeId string) string {
 	return path.Join(mnt.hostMountPath, mnt.pluginDataPath, "mount_volumes", volumeId)
-}
-
-// MfsPathToVolume
-func (mnt *mfsHandler) MfsPathToVolume(volumeId string) string {
-	return path.Join(mnt.pluginDataPath, "volumes", volumeId)
 }
 
 func (mnt *mfsHandler) HostPathToLogs() string {

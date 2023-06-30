@@ -1,0 +1,400 @@
+---
+apiVersion: storage.k8s.io/v1
+kind: CSIDriver
+metadata:
+  name: csi.moosefs.com
+spec:
+  attachRequired: true
+  podInfoOnMount: false
+---
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: moosefs-storage
+  namespace: kube-system
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: csi.moosefs.com
+allowVolumeExpansion: true
+---
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: csi-moosefs-controller-sa
+  namespace: kube-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: csi-moosefs-node-sa
+  namespace: kube-system
+---
+
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-moosefs-provisioner-role
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "update"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-moosefs-provisioner-binding
+subjects:
+  - kind: ServiceAccount
+    name: csi-moosefs-controller-sa
+    namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: csi-moosefs-provisioner-role
+  apiGroup: rbac.authorization.k8s.io
+---
+
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-moosefs-attacher-role
+rules:
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs: ["get", "list", "watch", "patch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["csinodes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["volumeattachments"]
+    verbs: ["get", "list", "watch", "patch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["volumeattachments/status"]
+    verbs: ["patch"]
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-moosefs-attacher-binding
+subjects:
+  - kind: ServiceAccount
+    name: csi-moosefs-controller-sa
+    namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: csi-moosefs-attacher-role
+  apiGroup: rbac.authorization.k8s.io
+---
+
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-moosefs-resizer-role
+rules:
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims/status"]
+    verbs: ["update", "patch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-moosefs-resizer-binding
+subjects:
+  - kind: ServiceAccount
+    name: csi-moosefs-controller-sa
+    namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: csi-moosefs-resizer-role
+  apiGroup: rbac.authorization.k8s.io
+---
+
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-moosefs-driver-registrar-node-role
+rules:
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-moosefs-driver-registrar-node-binding
+subjects:
+  - kind: ServiceAccount
+    name: csi-moosefs-node-sa
+    namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: csi-moosefs-driver-registrar-node-role
+  apiGroup: rbac.authorization.k8s.io
+---
+
+kind: StatefulSet
+apiVersion: apps/v1
+metadata:
+  name: csi-moosefs-controller
+  namespace: kube-system
+spec:
+  serviceName: "csi-moosefs"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: csi-moosefs-controller
+      role: csi-moosefs
+  template:
+    metadata:
+      labels:
+        app: csi-moosefs-controller
+        role: csi-moosefs
+    spec:
+      priorityClassName: system-cluster-critical
+      serviceAccount: csi-moosefs-controller-sa
+      hostNetwork: true
+      containers:
+        # provisioner
+        - name: csi-provisioner
+          image: quay.io/k8scsi/csi-provisioner:v1.4.0
+          args:
+            - "--csi-address=$(ADDRESS)"
+            - "--v=5"
+          env:
+            - name: ADDRESS
+              value: /var/lib/csi/sockets/pluginproxy/csi.sock
+          imagePullPolicy: "Always"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/lib/csi/sockets/pluginproxy/
+        # attacher
+        - name: csi-attacher
+          image: quay.io/k8scsi/csi-attacher:v3.1.0
+          args:
+            - "--v=5"
+            - "--csi-address=$(ADDRESS)"
+          env:
+            - name: ADDRESS
+              value: /var/lib/csi/sockets/pluginproxy/csi.sock
+          imagePullPolicy: "Always"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/lib/csi/sockets/pluginproxy/
+        # resizer
+        - name: csi-resizer
+          image: quay.io/k8scsi/csi-resizer:v0.5.0
+          args:
+            - "--v=5"
+            - "--csi-address=$(ADDRESS)"
+          env:
+            - name: ADDRESS
+              value: /var/lib/csi/sockets/pluginproxy/csi.sock
+          imagePullPolicy: "Always"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/lib/csi/sockets/pluginproxy/
+        # MooseFS CSI Plugin
+        - name: csi-moosefs-plugin
+          securityContext:
+            privileged: true
+            capabilities:
+              add: ["SYS_ADMIN"]
+            allowPrivilegeEscalation: true
+          image: registry.moosefs.com:443/moosefs-csi-plugin:latest-dev
+          args:
+            - "--mode=controller"
+            - "--csi-endpoint=$(CSI_ENDPOINT)"
+            - "--master-host=$(MASTER_HOST)"
+            - "--master-port=$(MASTER_PORT)"
+            - "--root-dir=$(ROOT_DIR)"
+            - "--plugin-data-dir=$(WORKING_DIR)"
+            - "--mfs-logging=$(MFS_LOGGING)"
+            - "--mfs-mount-options=$(MFS_MOUNT_OPTIONS)"
+          env:
+            - name: CSI_ENDPOINT
+              value: unix:///var/lib/csi/sockets/pluginproxy/csi.sock
+            - name: MASTER_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: csi-moosefs-config
+                  key: master_host
+            - name: MASTER_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: csi-moosefs-config
+                  key: master_port
+            - name: ROOT_DIR
+              valueFrom:
+                configMapKeyRef:
+                  name: csi-moosefs-config
+                  key: k8s_root_dir
+            - name: WORKING_DIR
+              valueFrom:
+                configMapKeyRef:
+                  name: csi-moosefs-config
+                  key: driver_working_dir
+            - name: MFS_LOGGING
+              valueFrom:
+                configMapKeyRef:
+                  name: csi-moosefs-config
+                  key: mfs_logging
+            - name: MFS_MOUNT_OPTIONS
+              valueFrom:
+                configMapKeyRef:
+                  name: csi-moosefs-config
+                  key: mfs_mount_options
+          imagePullPolicy: "Always"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/lib/csi/sockets/pluginproxy/
+      volumes:
+        - name: socket-dir
+          emptyDir: {}
+---
+kind: DaemonSet
+apiVersion: apps/v1
+metadata:
+  name: csi-moosefs-node
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      app: csi-moosefs-node
+  template:
+    metadata:
+      labels:
+        app: csi-moosefs-node
+        role: csi-moosefs
+    spec:
+      priorityClassName: system-node-critical
+      serviceAccount: csi-moosefs-node-sa
+      hostNetwork: true
+      containers:
+        # registrar
+        - name: driver-registrar
+          image: quay.io/k8scsi/csi-node-driver-registrar:v1.1.0
+          args:
+            - "--v=5"
+            - "--csi-address=$(ADDRESS)"
+            - "--kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)"
+          env:
+            - name: ADDRESS
+              value: /csi/csi.sock
+            - name: DRIVER_REG_SOCK_PATH
+              value: /var/lib/kubelet/plugins/csi.moosefs.com/csi.sock
+            - name: KUBE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          volumeMounts:
+            - name: plugin-dir
+              mountPath: /csi/
+            - name: registration-dir
+              mountPath: /registration/
+        # MooseFS CSI Plugin
+        - name: csi-moosefs-plugin
+          securityContext:
+            privileged: true
+            capabilities:
+              add: ["SYS_ADMIN"]
+            allowPrivilegeEscalation: true
+          image: registry.moosefs.com/moosefs-csi-plugin:latest-dev
+          args:
+            - "--mode=node"
+            - "--csi-endpoint=$(CSI_ENDPOINT)"
+            - "--master-host=$(MASTER_HOST)"
+            - "--master-port=$(MASTER_PORT)"
+            - "--node-id=$(NODE_ID)"
+            - "--root-dir=$(ROOT_DIR)"
+            - "--plugin-data-dir=$(WORKING_DIR)"
+            - "--mount-points-count=$(MOUNT_COUNT)"
+            - "--mfs-logging=$(MFS_LOGGING)"
+            - "--mfs-mount-options=$(MFS_MOUNT_OPTIONS)"
+          env:
+            - name: CSI_ENDPOINT
+              value: unix:///csi/csi.sock
+            - name: MASTER_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: csi-moosefs-config
+                  key: master_host
+            - name: MASTER_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: csi-moosefs-config
+                  key: master_port
+            - name: NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: ROOT_DIR
+              valueFrom:
+                configMapKeyRef:
+                  name: csi-moosefs-config
+                  key: k8s_root_dir
+            - name: WORKING_DIR
+              valueFrom:
+                configMapKeyRef:
+                  name: csi-moosefs-config
+                  key: driver_working_dir
+            - name: MOUNT_COUNT
+              valueFrom:
+                configMapKeyRef:
+                  name: csi-moosefs-config
+                  key: mount_count
+            - name: MFS_LOGGING
+              valueFrom:
+                configMapKeyRef:
+                  name: csi-moosefs-config
+                  key: mfs_logging
+            - name: MFS_MOUNT_OPTIONS
+              valueFrom:
+                configMapKeyRef:
+                  name: csi-moosefs-config
+                  key: mfs_mount_options
+          imagePullPolicy: "Always"
+          volumeMounts:
+            - name: plugin-dir
+              mountPath: /csi
+            - name: pods-mount-dir
+              mountPath: /var/lib/kubelet
+              mountPropagation: "Bidirectional"
+            - mountPath: /dev
+              name: device-dir
+      volumes:
+        - name: registration-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins_registry/
+            type: Directory
+        - name: plugin-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins/csi.moosefs.com
+            type: DirectoryOrCreate
+        - name: pods-mount-dir
+          hostPath:
+            path: /var/lib/kubelet
+            type: Directory
+        - name: device-dir
+          hostPath:
+            path: /dev
