@@ -19,7 +19,7 @@ package main
 import (
 	"flag"
 
-	"github.com/moosefs/moosefs-csi/driver"
+	"github.com/xandrus/moosefs-csi/driver"
 	log "github.com/sirupsen/logrus"
 )
 
