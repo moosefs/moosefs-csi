@@ -204,22 +204,35 @@ func (mnt *mfsHandler) SetQuota(volumeId string, size int64) (int64, error) {
 }
 
 func parseMfsQuotaToolsOutput(output string) (int64, error) {
+	var cols []string
+	var s string
+
 	lines := strings.Split(output, "\n")
-	if len(lines) <= quotaLimitRow {
-		return 0, fmt.Errorf("error while parsing quota tool output (less rows than expected); output: %s", output)
+	ll := len(lines)
+
+	if ll == 8 {
+		// new mfsgetquota output format
+		cols = strings.Split(lines[ll-4], "|")
+		s = strings.TrimSpace(cols[4])
+	} else if ll == 6 {
+		// old mfsgetquota output format
+		cols := strings.Split(lines[ll-4], "|")
+		s = strings.TrimSpace(cols[3])
+	} else {
+		return -1, fmt.Errorf("error while parsing mfsgetquota tool output (unexpected number of lines); output: %s", output)
 	}
-	cols := strings.Split(lines[quotaLimitRow], "|")
-	if len(cols) < 5 {
-		return 0, fmt.Errorf("error while parsing quota tool output (less columns than expected); output: %s", output)
-	}
-	s := strings.TrimSpace(cols[quotaLimitCol])
+
 	if s == "-" {
-		return -1, nil // let caller take care of error. May be useful for mount volumes
+		// no quota set
+		return -1, nil
 	}
+
 	quotaLimit, err := strconv.ParseInt(s, 10, 64)
+
 	if err != nil {
-		return 0, err
+		return -1, err
 	}
+
 	return quotaLimit, nil
 }
 

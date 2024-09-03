@@ -186,7 +186,7 @@ func (cs *ControllerService) ControllerExpandVolume(ctx context.Context, req *cs
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	if !exists {
-		return nil, status.Error(codes.NotFound, err.Error())
+		return nil, status.Error(codes.NotFound, "ControllerExpandVolume: Volume not found")
 	}
 
 	acquiredSize, err := cs.ctlMount.SetQuota(req.VolumeId, size)
