@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2023 Saglabs SA. All Rights Reserved.
+   Copyright (c) 2024 Saglabs SA. All Rights Reserved.
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -27,13 +27,13 @@ func main() {
 	var (
 		mode             = flag.String("mode", "value", "")
 		csiEndpoint      = flag.String("csi-endpoint", "unix:///var/lib/csi/sockets/pluginproxy/csi.sock", "CSI endpoint")
-		mfsmaster        = flag.String("master-host", "mfsmaster", "MooseFS endpoint to use (already provisioned cluster), e.g. 192.168.75.201")
-		mfsmaster_port   = flag.Int("master-port", 9421, "")
+		mfsmaster        = flag.String("master-host", "mfsmaster", "MooseFS master hostname or IP(Community Edition only)")
+		mfsmaster_port   = flag.Int("master-port", 9421, "MooseFS master communication port. Default 9421")
 		nodeId           = flag.String("node-id", "", "")
 		rootDir          = flag.String("root-dir", "/", "")
 		pluginDataDir    = flag.String("plugin-data-dir", "/", "")
 		mountPointsCount = flag.Int("mount-points-count", 1, "")
-		mfsMountOptions  = flag.String("mfs-mount-options", "", "extra options passed to mfsmount command for example mfsmd5pass=MD5")
+		mfsMountOptions  = flag.String("mfs-mount-options", "", "extra options passed to mfsmount command. For example mfsmd5pass=MD5")
 		sanityTestRun    = flag.Bool("sanity-test-run", false, "")
 		logLevel         = flag.Int("log-level", 5, "")
 		mfsLog           = flag.Bool("mfs-logging", true, "")
