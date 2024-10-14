@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2023 Saglabs SA. All Rights Reserved.
+   Copyright (c) 2024 Saglabs SA. All Rights Reserved.
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -186,7 +186,7 @@ func (cs *ControllerService) ControllerExpandVolume(ctx context.Context, req *cs
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	if !exists {
-		return nil, status.Error(codes.NotFound, err.Error())
+		return nil, status.Error(codes.NotFound, "ControllerExpandVolume: Volume not found")
 	}
 
 	acquiredSize, err := cs.ctlMount.SetQuota(req.VolumeId, size)
