@@ -7,7 +7,7 @@ on:
 
 env:
   REGISTRY_IMAGE: moosefs/moosefs-csi
-  MFS_CLIENT: 4.56.6 
+  MFS_CLIENT: 4.57.5 
   CSI_VERSION: 0.9.7
 
 jobs:
