@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Saglabs SA. All Rights Reserved.
+# Copyright (c) 2025 Saglabs SA. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-MFS_VERSION = "4.56.6"
-CSI_VERSION ?= "0.9.7"
+MFS_VERSION = "4.57.6"
+CSI_VERSION ?= "0.9.8"
 
 MFS_TAG=$(CSI_VERSION)-$(MFS_VERSION)
 DEV_TAG=$(CSI_VERSION)-dev

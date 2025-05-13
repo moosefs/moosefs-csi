@@ -12,6 +12,11 @@ MooseFS source code can be found [on GitHub](https://github.com/moosefs/moosefs)
 
 ## Changelog
 
+Driver verson 0.9.8
+* MooseFS client updated to version 4.57.6.
+* The provisioner and registrar images entries have been updated.
+* Update the Dockerfile to build only mfsmount and mfscli.
+
 Driver verson 0.9.7
 * Added support for MooseFS 4 client.
 * Enabled passing additional mfsmount parameters during the mount process (password and more).
@@ -51,20 +56,23 @@ Driver verson 0.9.7
     csi-moosefs-config                   6      42s
     ```
 
-3.  Update `deploy/kubernetes/csi-moosefs.yaml` file with the aproprieate image:
+3.  Update `deploy/csi-moosefs.yaml` file with the aproprieate image:
 
     The default image consists of the latest version of the CSI plug-in and the latest version of the MooseFS Community Edition client:
 
-    * Locate image definition under the `csi-moosefs-plugin` plugin name(line 230 and line 323)
-      `mage: registry.moosefs.com/moosefs-csi-plugin:0.9.7-4.56.6`
+    * Locate image definition under the `csi-moosefs-plugin` plugin name(line 230 and line 329)
+      `mage: ghcr.io/moosefs/moosefs-csi:dev`
     * Update the `image` version suffix in the plugin's section accordingly:
-        * `0.9.7-3.0.118`      – plugin version 0.9.7 and MooseFS CE 3.0.118
+        * `0.9.8-4.57.6`       – plugin version 0.9.7 and MooseFS CE 4.57.6
+        * `0.9.7-4.57.5`       – plugin version 0.9.7 and MooseFS CE 4.57.5
         * `0.9.7-4.56.6`       – plugin version 0.9.7 and MooseFS CE 4.56.6
-        * `0.9.7-3.0.118-pro`  – plugin version 0.9.7 and MooseFS PRO 3.0.118
-        * `0.9.7-4.56.6-pro`   – plugin version 0.9.7 and MooseFS PRO 4.56.6
 
       You can find a complete list of available images at: \
-      https://registry.moosefs.com/v2/moosefs-csi-plugin/tags/list.
+      https://github.com/moosefs/moosefs-csi/pkgs/container/moosefs-csi
+
+      Fot driver with MoosreFS client PRO version: https://registry.moosefs.com/v2/moosefs-csi-plugin/tags/list.
+        * `0.9.7-4.56.6-pro`   – plugin version 0.9.7 and MooseFS PRO 4.56.6
+
 
       **Note there are two occurrences of `csi-moosefs-plugin` in `csi-moosefs.yaml` file and it is necessary to update the image version in both places of the file.**
 
@@ -250,11 +258,11 @@ spec:
 |:----------:|:------------------:|
 |  `v1.26`   |      `v0.9.7`      |
 |  `-----`   |      `------`      |
-|  `v1.30`   |      `v0.9.7`      |
+|  `v1.32`   |      `v0.9.8`      |
 
 ## Copyright
 
-Copyright (c) 2020-2024 Saglabs SA
+Copyright (c) 2020-2025 Saglabs SA
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at [http://www.apache.org/licenses/LICENSE-2.0](https://www.apache.org/licenses/LICENSE-2.0).
 

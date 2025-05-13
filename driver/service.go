@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2024 Saglabs SA. All Rights Reserved.
+   Copyright (c) 2025 Saglabs SA. All Rights Reserved.
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -33,7 +33,7 @@ import (
 
 const (
 	driverName    = "csi.moosefs.com"
-	driverVersion = "0.9.7"
+	driverVersion = "0.9.8"
 )
 
 type Service interface{}
