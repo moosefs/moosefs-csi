@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2023 Saglabs SA. All Rights Reserved.
+   Copyright (c) 2025 Saglabs SA. All Rights Reserved.
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -151,7 +151,7 @@ func (m *Mounter) IsMounted(destPath string) (bool, error) {
 
 	for _, fs := range resp.FileSystems {
 		// check if the mount is propagated correctly. It should be set to shared, unless we run sanity tests
-		if fs.Propagation != "shared" && SanityTestRun == false {
+		if fs.Propagation != "shared" && !SanityTestRun {
 			return true, fmt.Errorf("Mounter::IsMounted -- mount propagation for target %q is not enabled (%s instead of shared)", destPath, fs.Propagation)
 		}
 		// the mountpoint should match as well

@@ -6,6 +6,7 @@ metadata:
 spec:
   attachRequired: true
   podInfoOnMount: false
+
 ---
 kind: StorageClass
 apiVersion: storage.k8s.io/v1
@@ -16,21 +17,22 @@ metadata:
     storageclass.kubernetes.io/is-default-class: "true"
 provisioner: csi.moosefs.com
 allowVolumeExpansion: true
----
 
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: csi-moosefs-controller-sa
   namespace: kube-system
+
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: csi-moosefs-node-sa
   namespace: kube-system
----
 
+---
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
@@ -51,6 +53,7 @@ rules:
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["get", "list", "watch", "create", "update", "patch"]
+
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
@@ -64,8 +67,8 @@ roleRef:
   kind: ClusterRole
   name: csi-moosefs-provisioner-role
   apiGroup: rbac.authorization.k8s.io
----
 
+---
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
@@ -83,6 +86,7 @@ rules:
   - apiGroups: ["storage.k8s.io"]
     resources: ["volumeattachments/status"]
     verbs: ["patch"]
+
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
@@ -96,8 +100,8 @@ roleRef:
   kind: ClusterRole
   name: csi-moosefs-attacher-role
   apiGroup: rbac.authorization.k8s.io
----
 
+---
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
@@ -115,6 +119,7 @@ rules:
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["get", "list", "watch", "create", "update", "patch"]
+
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
@@ -128,8 +133,8 @@ roleRef:
   kind: ClusterRole
   name: csi-moosefs-resizer-role
   apiGroup: rbac.authorization.k8s.io
----
 
+---
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
@@ -138,6 +143,7 @@ rules:
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["get", "list", "watch", "create", "update", "patch"]
+
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
@@ -151,8 +157,8 @@ roleRef:
   kind: ClusterRole
   name: csi-moosefs-driver-registrar-node-role
   apiGroup: rbac.authorization.k8s.io
----
 
+---
 kind: StatefulSet
 apiVersion: apps/v1
 metadata:
@@ -177,7 +183,7 @@ spec:
       containers:
         # provisioner
         - name: csi-provisioner
-          image: quay.io/k8scsi/csi-provisioner:v1.4.0
+          image: quay.io/k8scsi/csi-provisioner:v2.1.0
           args:
             - "--csi-address=$(ADDRESS)"
             - "--v=5"
@@ -221,7 +227,7 @@ spec:
             capabilities:
               add: ["SYS_ADMIN"]
             allowPrivilegeEscalation: true
-          image: registry.moosefs.com:443/moosefs-csi-plugin:0.9.4-3.0.117
+          image: ghcr.io/moosefs/moosefs-csi:0.9.8-4.57.6
           args:
             - "--mode=controller"
             - "--csi-endpoint=$(CSI_ENDPOINT)"
@@ -230,6 +236,7 @@ spec:
             - "--root-dir=$(ROOT_DIR)"
             - "--plugin-data-dir=$(WORKING_DIR)"
             - "--mfs-logging=$(MFS_LOGGING)"
+            - "--mfs-mount-options=$(MFS_MOUNT_OPTIONS)"
           env:
             - name: CSI_ENDPOINT
               value: unix:///var/lib/csi/sockets/pluginproxy/csi.sock
@@ -258,6 +265,11 @@ spec:
                 configMapKeyRef:
                   name: csi-moosefs-config
                   key: mfs_logging
+            - name: MFS_MOUNT_OPTIONS
+              valueFrom:
+                configMapKeyRef:
+                  name: csi-moosefs-config
+                  key: mfs_mount_options
           imagePullPolicy: "Always"
           volumeMounts:
             - name: socket-dir
@@ -265,6 +277,7 @@ spec:
       volumes:
         - name: socket-dir
           emptyDir: {}
+
 ---
 kind: DaemonSet
 apiVersion: apps/v1
@@ -287,7 +300,7 @@ spec:
       containers:
         # registrar
         - name: driver-registrar
-          image: quay.io/k8scsi/csi-node-driver-registrar:v1.1.0
+          image: quay.io/k8scsi/csi-node-driver-registrar:v2.1.0
           args:
             - "--v=5"
             - "--csi-address=$(ADDRESS)"
@@ -313,7 +326,7 @@ spec:
             capabilities:
               add: ["SYS_ADMIN"]
             allowPrivilegeEscalation: true
-          image: registry.moosefs.com:443/moosefs-csi-plugin:0.9.4-3.0.117
+          image: ghcr.io/moosefs/moosefs-csi:0.9.8-4.57.6
           args:
             - "--mode=node"
             - "--csi-endpoint=$(CSI_ENDPOINT)"
@@ -324,6 +337,7 @@ spec:
             - "--plugin-data-dir=$(WORKING_DIR)"
             - "--mount-points-count=$(MOUNT_COUNT)"
             - "--mfs-logging=$(MFS_LOGGING)"
+            - "--mfs-mount-options=$(MFS_MOUNT_OPTIONS)"
           env:
             - name: CSI_ENDPOINT
               value: unix:///csi/csi.sock
@@ -361,6 +375,11 @@ spec:
                 configMapKeyRef:
                   name: csi-moosefs-config
                   key: mfs_logging
+            - name: MFS_MOUNT_OPTIONS
+              valueFrom:
+                configMapKeyRef:
+                  name: csi-moosefs-config
+                  key: mfs_mount_options
           imagePullPolicy: "Always"
           volumeMounts:
             - name: plugin-dir

@@ -1,4 +1,4 @@
-# Copyright (c) 2023 Saglabs SA. All Rights Reserved.
+# Copyright (c) 2025 Saglabs SA. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,42 +12,46 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-MFS3VER=3.0.117
-MFS4VER=4.44.4
-DRIVER_VERSION ?= 0.9.4
-MFS3TAGCE=$(DRIVER_VERSION)-$(MFS3VER)
-MFS3TAGPRO=$(DRIVER_VERSION)-$(MFS3VER)-pro
-MFS4TAGPRO=$(DRIVER_VERSION)-$(MFS4VER)-pro
-DEVTAG=$(DRIVER_VERSION)-dev
+MFS_VERSION = "4.57.6"
+CSI_VERSION ?= "0.9.8"
 
-NAME=moosefs-csi-plugin
-DOCKER_REGISTRY=registry.moosefs.com
+MFS_TAG=$(CSI_VERSION)-$(MFS_VERSION)
+DEV_TAG=$(CSI_VERSION)-dev
 
-ready: clean compile
-publish-dev: clean compile build-dev push-dev
+NAME=moosefs-csi
+
+csi: clean compile
+dev: build-dev push-dev
+prod: build-prod push-prod
 
 compile:
-	@echo "==> Building the project"
+	@echo "==> Building the CSI driver"
 	@env CGO_ENABLED=0 GOCACHE=/tmp/go-cache GOOS=linux GOARCH=amd64 go build -a -o cmd/moosefs-csi-plugin/${NAME} cmd/moosefs-csi-plugin/main.go
 
 build-dev:
-	@echo "==> Building DEV docker images"
-	@docker build -t $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(DEVTAG) cmd/moosefs-csi-plugin
+	@echo "==> Building DEV CSI images"
+	@docker build --no-cache -t moosefs/$(NAME):dev -t moosefs/$(NAME):$(DEV_TAG) --build-arg MFS_TAG=v$(MFS_VERSION) --build-arg CSI_TAG=dev cmd/moosefs-csi-plugin
 
 push-dev:
-	@echo "==> Publishing DEV $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(DEVTAG)"
-	@docker push $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(DEVTAG)
-	@echo "==> Your DEV image is now available at $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(DEVTAG)"
+	@echo "==> Publishing DEV CSI image on hub.docker.com: moosefs/$(NAME):$(DEV_TAG)"
+	@docker push moosefs/$(NAME):$(DEV_TAG)
+	@docker push moosefs/$(NAME):dev
 
 build-prod:
-	@docker build -t $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(MFS3TAGCE) cmd/moosefs-csi-plugin -f cmd/moosefs-csi-plugin/Dockerfile-mfs3-ce
-	@docker build -t $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(MFS3TAGPRO) cmd/moosefs-csi-plugin -f cmd/moosefs-csi-plugin/Dockerfile-mfs3-pro
-	@docker build -t $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(MFS4TAGPRO) cmd/moosefs-csi-plugin -f cmd/moosefs-csi-plugin/Dockerfile-mfs4-pro
+	@echo "==> Building Production CSI images"
+	@docker build --no-cache -t moosefs/$(NAME):$(MFS_TAG) --build-arg MFS_TAG=v$(MFS_VERSION) --build-arg CSI_TAG=$(CSI_VERSION) cmd/moosefs-csi-plugin
 
 push-prod:
-	@docker push $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(MFS3TAGCE)
-	@docker push $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(MFS3TAGPRO)
-	@docker push $(DOCKER_REGISTRY)/moosefs-csi-plugin:$(MFS4TAGPRO)
+	@echo "==> Publishing PRODUCTION CSI image on hub.docker.com: moosefs/$(NAME):$(MFS_TAG)"
+	@docker push moosefs/$(NAME):$(MFS_TAGCE)
+
+dev-buildx:
+	@echo "==> Using buildx to build and publish dev image"
+	@docker buildx build --no-cache --push --platform linux/amd64,linux/arm64,linux/arm/v7 --build-arg MFS_TAG=v$(MFS_VERSION) --build-arg CSI_TAG=dev -t moosefs/$(NAME):dev -t moosefs/$(NAME):$(DEV_TAG) cmd/moosefs-csi-plugin
+
+prod-buildx:
+	@echo "==> Using buildx to build and publish production image"
+	@docker buildx build --push --platform linux/amd64,linux/arm64,linux/arm/v7 --build-arg MFS_TAG=v$(MFS_VERSION) --build-arg CSI_TAG=dev -t moosefs/$(NAME):$(MFS_TAG) cmd/moosefs-csi-plugin
 
 clean:
 	@echo "==> Cleaning releases"

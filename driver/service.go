@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2023 Saglabs SA. All Rights Reserved.
+   Copyright (c) 2025 Saglabs SA. All Rights Reserved.
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -26,7 +26,6 @@ import (
 	"path/filepath"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	//	"github.com/kubernetes-csi/csi-test/v3/driver"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/status"
@@ -34,7 +33,7 @@ import (
 
 const (
 	driverName    = "csi.moosefs.com"
-	driverVersion = "0.9.4"
+	driverVersion = "0.9.8"
 )
 
 type Service interface{}

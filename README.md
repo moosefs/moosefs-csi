@@ -10,6 +10,19 @@ MooseFS source code can be found [on GitHub](https://github.com/moosefs/moosefs)
 
 *Note that a pool of MooseFS Clients that are available for use by containers is created on each node. By default the number of MooseFS Clients in the pool is `1`.*
 
+## Changelog
+
+Driver verson 0.9.8
+* MooseFS client updated to version 4.57.6.
+* The provisioner and registrar images entries have been updated.
+* Update the Dockerfile to build only mfsmount and mfscli.
+
+Driver verson 0.9.7
+* Added support for MooseFS 4 client.
+* Enabled passing additional mfsmount parameters during the mount process (password and more).
+* Support for cross-platform compilation has been enabled.
+* Repository images support AMD64, ARM64 and ARMv7 architectures by default.
+
 ## Installation on Kubernetes
 
 ### Prerequisites
@@ -20,21 +33,22 @@ MooseFS source code can be found [on GitHub](https://github.com/moosefs/moosefs)
 
 ### **Deployment**
 
-1.  Complete `deploy/kubernetes/csi-moosefs-config.yaml` configuration file with your settings:
+1.  Edit `deploy/kubernetes/csi-moosefs-config.yaml` config map file with your settings:
 
     * `master_host` – domain name (**recommended**) or IP address of your MooseFS Master Server(s). It is an equivalent to `-H master_host` or `-o mfsmaster=master_host` passed to MooseFS Client.
     * `master_port` – port number of your MooseFS Master Server. It is an equivalent to `-P master_port` or `-o mfsport=master_port` passed to MooseFS Client.
     * `k8s_root_dir` – each mount's root directory on MooseFS. Each path is relative to this one. Equivalent to `-S k8s_root_dir` or `-o mfssubfolder=k8s_root_dir` passed to MooseFS Client.
     * `driver_working_dir` – a driver working directory inside MooseFS where persistent volumes, logs and metadata is stored (actual path is: `k8s_root_dir/driver_working_dir`)
     * `mount_count` – number of pre created MooseFS clients running on each node
-    and apply:
     * `mfs_logging` – driver can create logs from each component in `k8s_root_dir/driver_working_dir/logs` directory. Boolean `"true"`/`"false"` value.
+
+2.  Apply csi-moosefs-config config map to the cluster:
 
     ```
     $ kubectl apply -f deploy/kubernetes/csi-moosefs-config.yaml
     ```
 
-2.  ConfigMap should now be created:
+    Check the config map status:
 
     ```
     $ kubectl get configmap -n kube-system
@@ -42,15 +56,23 @@ MooseFS source code can be found [on GitHub](https://github.com/moosefs/moosefs)
     csi-moosefs-config                   6      42s
     ```
 
-3.  Update `deploy/kubernetes/csi-moosefs.yaml` file with the image that uses required MooseFS or MooseFS Pro version and MooseFS CSI Plugin version. Default images are the latest version of the plugin and the latest version of MooseFS (Community):
+3.  Update `deploy/csi-moosefs.yaml` file with the aproprieate image:
 
-    * Find plugin named `csi-moosefs-plugin`
-    * Update the `image` version suffix in the plugin's section accordingly, for example:
-        * `0.9.4-3.0.117` – for plugin version 0.9.4 and MooseFS Community 3.0.117
-        * `0.9.4-4.44.4-pro` – for plugin version 0.9.4 and MooseFS Pro 4.44.4
+    The default image consists of the latest version of the CSI plug-in and the latest version of the MooseFS Community Edition client:
+
+    * Locate image definition under the `csi-moosefs-plugin` plugin name(line 230 and line 329)
+      `mage: ghcr.io/moosefs/moosefs-csi:dev`
+    * Update the `image` version suffix in the plugin's section accordingly:
+        * `0.9.8-4.57.6`       – plugin version 0.9.7 and MooseFS CE 4.57.6
+        * `0.9.7-4.57.5`       – plugin version 0.9.7 and MooseFS CE 4.57.5
+        * `0.9.7-4.56.6`       – plugin version 0.9.7 and MooseFS CE 4.56.6
 
       You can find a complete list of available images at: \
-      https://registry.moosefs.com/v2/moosefs-csi-plugin/tags/list.
+      https://github.com/moosefs/moosefs-csi/pkgs/container/moosefs-csi
+
+      Fot driver with MoosreFS client PRO version: https://registry.moosefs.com/v2/moosefs-csi-plugin/tags/list.
+        * `0.9.7-4.56.6-pro`   – plugin version 0.9.7 and MooseFS PRO 4.56.6
+
 
       **Note there are two occurrences of `csi-moosefs-plugin` in `csi-moosefs.yaml` file and it is necessary to update the image version in both places of the file.**
 
@@ -104,7 +126,8 @@ MooseFS source code can be found [on GitHub](https://github.com/moosefs/moosefs)
     172.17.2.80:9421          4.2T      1.4T      2.8T  33% /data
     ```
    
-    You may take a look at MooseFS CGI Monitoring Interface ("Quotas" tab) to check if a quota for 5 GiB on a newly created volume directory has been set. Dynamically provisioned volumes are stored on MooseFS in `k8s_root_dir/driver_working_dir/volumes` directory.
+    You may take a look at MooseFS GUI Monitoring Interface ("Quotas" tab) to check if a quota for 5 GiB on a newly created volume directory has been set.
+    Dynamically provisioned volumes are stored on MooseFS in `k8s_root_dir/driver_working_dir/volumes` directory.
    
 5.  Clean up:
 
@@ -233,12 +256,13 @@ spec:
 
 | Kubernetes | MooseFS CSI Driver |
 |:----------:|:------------------:|
-| `v1.26.2`  |      `v0.9.4`      |
-| `v1.24.2`  |      `v0.9.4`      |
+|  `v1.26`   |      `v0.9.7`      |
+|  `-----`   |      `------`      |
+|  `v1.32`   |      `v0.9.8`      |
 
 ## Copyright
 
-Copyright (c) 2020-2023 Saglabs SA
+Copyright (c) 2020-2025 Saglabs SA
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at [http://www.apache.org/licenses/LICENSE-2.0](https://www.apache.org/licenses/LICENSE-2.0).
 
