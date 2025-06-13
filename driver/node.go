@@ -19,6 +19,7 @@ package driver
 import (
 	"context"
 	"math/rand"
+	"strconv"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc/codes"
@@ -40,6 +41,7 @@ var nodeCapabilities = []csi.NodeServiceCapability_RPC_Type{
 	//csi.NodeServiceCapability_RPC_GET_VOLUME_STATS,
 	// csi.NodeServiceCapability_RPC_VOLUME_CONDITION,
 	//		csi.NodeServiceCapability_RPC_STAGE_UNSTAGE_VOLUME,
+	csi.NodeServiceCapability_RPC_VOLUME_MOUNT_GROUP,
 }
 
 func NewNodeService(mfsmaster string, mfsmaster_port int, rootPath, pluginDataPath, nodeId, mfsMountOptions string, mountPointsCount int) (*NodeService, error) {
@@ -87,10 +89,22 @@ func (ns *NodeService) NodePublishVolume(ctx context.Context, req *csi.NodePubli
 	if req.GetReadonly() {
 		options = append(options, "ro")
 	}
+	
+	// Extract fsGroup from VolumeCapability if provided
+	var fsGroup *int64
+	if mountVol := req.VolumeCapability.GetMount(); mountVol != nil && mountVol.VolumeMountGroup != "" {
+		if gid, err := strconv.ParseInt(mountVol.VolumeMountGroup, 10, 64); err == nil {
+			fsGroup = &gid
+			log.Infof("NodePublishVolume - Parsed fsGroup: %d", gid)
+		} else {
+			log.Errorf("NodePublishVolume - Failed to parse fsGroup '%s': %v", mountVol.VolumeMountGroup, err)
+		}
+	}
+	
 	if handler, err := ns.pickHandler(req.GetVolumeContext(), req.GetPublishContext()); err != nil {
 		return nil, err
 	} else {
-		if err := handler.BindMount(source, target, options...); err != nil {
+		if err := handler.BindMountWithFSGroup(source, target, fsGroup, options...); err != nil {
 			return nil, status.Error(codes.Internal, err.Error())
 		}
 	}
