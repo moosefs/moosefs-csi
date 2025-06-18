@@ -3,11 +3,12 @@ name: Build and publish moosefs-csi driver Docker image
 on:
   push:
     branches:
+      - master
       - dev
 
 env:
   REGISTRY_IMAGE: moosefs/moosefs-csi
-  MFS_CLIENT: 4.57.6 
+  MFS_CLIENT: 4.57.7 
   CSI_VERSION: 0.9.8
 
 jobs:
