@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-MFS_VERSION = "4.57.7"
+MFS_VERSION = "4.58.0"
 CSI_VERSION ?= "0.9.8"
 
 MFS_TAG=$(CSI_VERSION)-$(MFS_VERSION)

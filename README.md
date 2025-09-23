@@ -13,7 +13,8 @@ MooseFS source code can be found [on GitHub](https://github.com/moosefs/moosefs)
 ## Changelog
 
 Driver verson 0.9.8
-* MooseFS client updated to version 4.57.6.
+* MooseFS client updated to version 4.58.0.
+* Image OS changed to Alpine Linux 3.22
 * The provisioner and registrar images entries have been updated.
 * Update the Dockerfile to build only mfsmount and mfscli.
 
@@ -63,15 +64,15 @@ Driver verson 0.9.7
     * Locate image definition under the `csi-moosefs-plugin` plugin name(line 230 and line 329)
       `mage: ghcr.io/moosefs/moosefs-csi:dev`
     * Update the `image` version suffix in the plugin's section accordingly:
-        * `0.9.8-4.57.6`       – plugin version 0.9.7 and MooseFS CE 4.57.6
-        * `0.9.7-4.57.5`       – plugin version 0.9.7 and MooseFS CE 4.57.5
-        * `0.9.7-4.56.6`       – plugin version 0.9.7 and MooseFS CE 4.56.6
+        * `0.9.8-4.58.0`       – plugin version 0.9.8 and MooseFS CE 4.58.0
+        * `0.9.8-4.57.7`       – plugin version 0.9.8 and MooseFS CE 4.57.6
+        * `0.9.7-4.57.6`       – plugin version 0.9.7 and MooseFS CE 4.57.5
 
       You can find a complete list of available images at: \
       https://github.com/moosefs/moosefs-csi/pkgs/container/moosefs-csi
 
       Fot driver with MoosreFS client PRO version: https://registry.moosefs.com/v2/moosefs-csi-plugin/tags/list.
-        * `0.9.7-4.56.6-pro`   – plugin version 0.9.7 and MooseFS PRO 4.56.6
+        * `0.9.8-4.58.0-pro`   – plugin version 0.9.8 and MooseFS PRO 4.58.0
 
 
       **Note there are two occurrences of `csi-moosefs-plugin` in `csi-moosefs.yaml` file and it is necessary to update the image version in both places of the file.**
