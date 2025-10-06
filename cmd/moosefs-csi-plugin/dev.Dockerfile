@@ -20,8 +20,8 @@ FROM golang:1.25-alpine3.22 AS csibuilder
 WORKDIR /build
 ARG CSI_TAG
 RUN apk add --update git
-RUN git clone --depth 1 --branch ${CSI_TAG} https://github.com/moosefs/moosefs-csi.git
-RUN cd moosefs-csi && CGO_ENABLED=0 GOCACHE=/tmp/go-cache GOOS=linux go build -a -o /build/moosefs-csi-plugin cmd/moosefs-csi-plugin/main.go
+COPY ./ /build
+RUN CGO_ENABLED=0 GOCACHE=/tmp/go-cache GOOS=linux go build -a -o /build/moosefs-csi-plugin cmd/moosefs-csi-plugin/main.go
 
 # MooseFS client is required for the CSI driver to mount volumes
 FROM moosefs/mfsbuilder:alpine3.22 AS mfsbuilder
