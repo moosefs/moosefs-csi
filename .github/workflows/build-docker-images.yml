@@ -3,116 +3,59 @@ name: Build and publish moosefs-csi driver Docker image
 on:
   push:
     branches:
-      - dev
+      - master
 
 env:
   REGISTRY_IMAGE: moosefs/moosefs-csi
-  MFS_CLIENT: 4.57.6 
+  MFS_CLIENT: 4.58.1 
   CSI_VERSION: 0.9.8
 
 jobs:
-  build:
+  build-dockerhub:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        platform:
-          - linux/amd64
-          - linux/arm64
-          - linux/arm/v7
     steps:
-      - name: Prepare
-        run: |
-          platform=${{ matrix.platform }}
-          echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
-      
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY_IMAGE }}
-          tags: |
-            type=ref,event=branch
-            type=raw,value=${{ env.CSI_VERSION }}-${{ env.MFS_CLIENT }}
-            type=raw,value=${{ env.CSI_VERSION }}-{{branch}}
-      
+      - name: Checkout
+        uses: actions/checkout@v4
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
-      
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      
-      - name: Login to GitHub Container Registry
+      - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_TOKEN }}
-      
-      - name: Build and push by digest MooseFS Client v4
-        id: build
-        uses: docker/build-push-action@v6
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build and push
+        uses: docker/build-push-action@v5
         with:
-          file: ./cmd/moosefs-csi-plugin/Dockerfile
-          platforms: ${{ matrix.platform }}
-          labels: ${{ steps.meta.outputs.labels }}
-          outputs: type=image,name=ghcr.io/${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
-          build-args: |
-            MFS_TAG=v${{ env.MFS_CLIENT }}
-            CSI_TAG=dev
-      
-      - name: Export digest
-        run: |
-          mkdir -p /tmp/digests
-          digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests/${digest#sha256:}"
-      
-      - name: Upload digest
-        uses: actions/upload-artifact@v4
-        with:
-          name: digests-${{ env.PLATFORM_PAIR }}
-          path: /tmp/digests/*
-          if-no-files-found: error
-          retention-days: 1
-
-  merge:
-    runs-on: ubuntu-latest
-    needs:
-      - build
-    steps:
-      - name: Download digests
-        uses: actions/download-artifact@v4
-        with:
-          path: /tmp/digests
-          pattern: digests-*
-          merge-multiple: true
-      
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ env.REGISTRY_IMAGE }}
+          context: ./cmd/moosefs-csi-plugin
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          push: true
           tags: |
-            type=ref,event=branch
-            type=raw,value=${{ env.CSI_VERSION }}-${{ env.MFS_CLIENT }}
-            type=raw,value=${{ env.CSI_VERSION }}-{{branch}}
-      
+            ${{ env.REGISTRY_IMAGE }}:${{ env.CSI_VERSION }}-${{ env.MFS_CLIENT }}
+            ${{ env.REGISTRY_IMAGE }}:latest
+  build-ghcr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_TOKEN }}
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: ./cmd/moosefs-csi-plugin
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          push: true
+          tags: |
+            ghcr.io/${{ env.REGISTRY_IMAGE }}:${{ env.CSI_VERSION }}-${{ env.MFS_CLIENT }}
+            ghcr.io/${{ env.REGISTRY_IMAGE }}:latest
       
-      - name: Create manifest list and push
-        working-directory: /tmp/digests
-        run: |
-          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf 'ghcr.io/${{ env.REGISTRY_IMAGE }}@sha256:%s ' *)
-      
-      - name: Inspect image
-        run: |
-          docker buildx imagetools inspect ghcr.io/${{ env.REGISTRY_IMAGE }}:${{ steps.meta.outputs.version }}

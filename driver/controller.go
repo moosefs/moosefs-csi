@@ -79,7 +79,7 @@ func (cs *ControllerService) CreateVolume(ctx context.Context, req *csi.CreateVo
 	if req.Name == "" {
 		return nil, status.Error(codes.InvalidArgument, "CreateVolume: Name must be provided")
 	}
-	if req.VolumeCapabilities == nil || len(req.VolumeCapabilities) == 0 {
+	if len(req.VolumeCapabilities) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "CreateVolume: Volume capabilities must be provided")
 	}
 	requestedQuota, err := getRequestCapacity(req.CapacityRange)

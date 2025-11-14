@@ -31,17 +31,14 @@ import (
 )
 
 const (
-	fsType          = "moosefs"
-	newVolumeMode   = 0755
-	getQuotaCmd     = "mfsgetquota"
-	setQuotaCmd     = "mfssetquota"
-	quotaLimitType  = "-L"
-	quotaLimitRow   = 2
-	quotaLimitCol   = 3
-	logsDirName     = "logs"
-	volumesDirName  = "volumes"
-	mvolumesDirName = "mount_volumes"
-	mntDir          = "/mnt"
+	fsType         = "moosefs"
+	newVolumeMode  = 0755
+	getQuotaCmd    = "mfsgetquota"
+	setQuotaCmd    = "mfssetquota"
+	quotaLimitType = "-L"
+	logsDirName    = "logs"
+	volumesDirName = "volumes"
+	mntDir         = "/mnt"
 )
 
 // todo(ad): in future possibly add more options (mount options?)
@@ -211,15 +208,18 @@ func parseMfsQuotaToolsOutput(output string) (int64, error) {
 	lines := strings.Split(output, "\n")
 	ll := len(lines)
 
-	if ll == 8 {
-		// new mfsgetquota output format
+	switch ll {
+	case 8:
+		// mfssetquota new format output
 		cols = strings.Split(lines[ll-4], "|")
 		s = strings.TrimSpace(cols[4])
-	} else if ll == 6 {
-		// old mfsgetquota output format
+	case 6:
+		// mfsgetquota old format output
 		cols := strings.Split(lines[ll-4], "|")
 		s = strings.TrimSpace(cols[3])
-	} else {
+	case 0:
+		return -1, errors.New("error while parsing mfsgetquota tool output (empty output)")
+	default:
 		return -1, fmt.Errorf("error while parsing mfsgetquota tool output (unexpected number of lines); output: %s", output)
 	}
 

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-MFS_VERSION = "4.57.6"
+MFS_VERSION = "4.58.1"
 CSI_VERSION ?= "0.9.8"
 
 MFS_TAG=$(CSI_VERSION)-$(MFS_VERSION)
@@ -30,7 +30,7 @@ compile:
 
 build-dev:
 	@echo "==> Building DEV CSI images"
-	@docker build --no-cache -t moosefs/$(NAME):dev -t moosefs/$(NAME):$(DEV_TAG) --build-arg MFS_TAG=v$(MFS_VERSION) --build-arg CSI_TAG=dev cmd/moosefs-csi-plugin
+	@docker build --no-cache -t moosefs/$(NAME):dev -t moosefs/$(NAME):$(DEV_TAG) --build-arg MFS_TAG=v$(MFS_VERSION) --build-arg CSI_TAG=dev --file cmd/moosefs-csi-plugin/dev.Dockerfile .
 
 push-dev:
 	@echo "==> Publishing DEV CSI image on hub.docker.com: moosefs/$(NAME):$(DEV_TAG)"
@@ -47,7 +47,7 @@ push-prod:
 
 dev-buildx:
 	@echo "==> Using buildx to build and publish dev image"
-	@docker buildx build --no-cache --push --platform linux/amd64,linux/arm64,linux/arm/v7 --build-arg MFS_TAG=v$(MFS_VERSION) --build-arg CSI_TAG=dev -t moosefs/$(NAME):dev -t moosefs/$(NAME):$(DEV_TAG) cmd/moosefs-csi-plugin
+	@docker buildx build --no-cache --push --platform linux/amd64,linux/arm64,linux/arm/v7 --build-arg MFS_TAG=v$(MFS_VERSION) --build-arg CSI_TAG=dev -t moosefs/$(NAME):dev -t moosefs/$(NAME):$(DEV_TAG) --file cmd/moosefs-csi-plugin/dev.Dockerfile .
 
 prod-buildx:
 	@echo "==> Using buildx to build and publish production image"
