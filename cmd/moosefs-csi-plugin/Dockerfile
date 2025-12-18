@@ -13,7 +13,7 @@
 # limitations under the License.
 
 ARG CSI_TAG="v0.9.8"
-ARG MFS_TAG="v4.58.1"
+ARG MFS_TAG="v4.58.3"
 
 #Build MooseFS CSI driver from source
 FROM golang:1.25-alpine3.22 AS csibuilder
