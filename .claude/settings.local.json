@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "Bash(grep:*)",
+      "Bash(make:*)"
+    ]
+  },
+  "enabledMcpjsonServers": [
+    "playwright",
+    "taskmaster-ai",
+    "deepwiki"
+  ]
+}

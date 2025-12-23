@@ -25,6 +25,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"gopkg.in/natefinch/lumberjack.v2"
 )
@@ -269,17 +270,30 @@ func (mnt *mfsHandler) MountMfs() error {
 }
 
 func (mnt *mfsHandler) BindMount(mfsSource string, target string, options ...string) error {
+	return mnt.BindMountWithFSGroup(mfsSource, target, nil, options...)
+}
+
+func (mnt *mfsHandler) BindMountWithFSGroup(mfsSource string, target string, fsGroup *int64, options ...string) error {
 	mounter := Mounter{}
 	source := mnt.HostPathTo(mfsSource)
-	log.Infof("BindMount - source: %s, target: %s, options: %v", source, target, options)
+	log.Infof("BindMountWithFSGroup - source: %s, target: %s, fsGroup: %v, options: %v", source, target, fsGroup, options)
+	
 	if isMounted, err := mounter.IsMounted(target); err != nil {
 		return err
 	} else if !isMounted {
 		if err := mounter.Mount(source, target, fsType, append(options, "bind")...); err != nil {
 			return err
 		}
+		
+		// Apply fsGroup permissions if specified
+		if fsGroup != nil {
+			if err := mnt.applyFSGroupPermissions(source, *fsGroup); err != nil {
+				log.Errorf("BindMountWithFSGroup - Failed to apply fsGroup permissions: %v", err)
+				// Don't fail the mount for permission errors, log and continue
+			}
+		}
 	} else {
-		log.Infof("BindMount - target %s is already mounted", target)
+		log.Infof("BindMountWithFSGroup - target %s is already mounted", target)
 	}
 	return nil
 }
@@ -322,4 +336,38 @@ func (mnt *mfsHandler) HostPluginDataPath() string {
 
 func (mnt *mfsHandler) HostPathTo(to string) string {
 	return path.Join(mnt.hostMountPath, to)
+}
+
+// applyFSGroupPermissions applies the specified fsGroup ownership to the volume directory
+// This function sets the group ownership of the volume root directory to the fsGroup
+// and ensures it's group-writable (0775 permissions)
+func (mnt *mfsHandler) applyFSGroupPermissions(volumePath string, fsGroup int64) error {
+	log.Infof("applyFSGroupPermissions - path: %s, fsGroup: %d", volumePath, fsGroup)
+	
+	// Get current file info
+	fileInfo, err := os.Stat(volumePath)
+	if err != nil {
+		return fmt.Errorf("failed to stat volume path %s: %v", volumePath, err)
+	}
+	
+	// Get current uid (should remain unchanged)
+	stat, ok := fileInfo.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fmt.Errorf("failed to get syscall.Stat_t for %s", volumePath)
+	}
+	currentUID := int(stat.Uid)
+	
+	// Change ownership to current uid and specified fsGroup
+	if err := os.Chown(volumePath, currentUID, int(fsGroup)); err != nil {
+		return fmt.Errorf("failed to chown %s to %d:%d: %v", volumePath, currentUID, fsGroup, err)
+	}
+	
+	// Set permissions to 0775 (owner+group writable, others readable)
+	// This ensures the fsGroup can write to the volume
+	if err := os.Chmod(volumePath, 0775); err != nil {
+		return fmt.Errorf("failed to chmod %s to 0775: %v", volumePath, err)
+	}
+	
+	log.Infof("applyFSGroupPermissions - successfully applied fsGroup %d to %s", fsGroup, volumePath)
+	return nil
 }

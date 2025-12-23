@@ -3,7 +3,7 @@ module github.com/moosefs/moosefs-csi
 go 1.25
 
 require (
-	github.com/container-storage-interface/spec v1.4.0
+	github.com/container-storage-interface/spec v1.5.0
 	github.com/golang/protobuf v1.4.3
 	github.com/sirupsen/logrus v1.8.0
 	google.golang.org/grpc v1.36.0
