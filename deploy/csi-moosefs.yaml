@@ -300,7 +300,7 @@ spec:
       containers:
         # registrar
         - name: driver-registrar
-          image: quay.io/k8scsi/csi-node-driver-registrar:v2.1.0
+          image: registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.1.0
           args:
             - "--v=5"
             - "--csi-address=$(ADDRESS)"
