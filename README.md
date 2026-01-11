@@ -20,7 +20,7 @@ Driver verson 1.0.0
 * Update csi-node-driver-registrar url.
 
 Driver verson 0.9.8
-* MooseFS client updated to version 4.58.0.
+* MooseFS client updated to version 4.58.3.
 * Image OS changed to Alpine Linux 3.22
 * The provisioner and registrar images entries have been updated.
 * Update the Dockerfile to build only mfsmount and mfscli.
