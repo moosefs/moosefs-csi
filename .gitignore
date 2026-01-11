@@ -1,5 +1,5 @@
 Gopkg.lock
 Gopkg.toml
-/cmd/moosefs-csi-plugin/moosefs-csi-plugin
+/cmd/moosefs-csi-plugin/moosefs-*
 /vendor
 /.idea

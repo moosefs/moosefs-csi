@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: moosefs-fsgroup-pod
+spec:
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+  containers:
+    - name: moosefs-fsgroup-container
+      image: busybox:latest
+      command:
+        [
+          "/bin/sh",
+          "-c",
+          "echo 'Hello, World!' >> /data/hello.txt && sleep 3600",
+        ]
+      volumeMounts:
+        - name: moosefs-fsgroup-volume
+          mountPath: /data
+      securityContext:
+        allowPrivilegeEscalation: false
+  volumes:
+    - name: moosefs-fsgroup-volume
+      persistentVolumeClaim:
+        claimName: moosefs-fsgroup-pvc

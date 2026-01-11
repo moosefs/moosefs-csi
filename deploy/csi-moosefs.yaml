@@ -210,7 +210,7 @@ spec:
               mountPath: /var/lib/csi/sockets/pluginproxy/
         # resizer
         - name: csi-resizer
-          image: registry.k8s.io/sig-storage/csi-resizer:v2.0.0 
+          image: registry.k8s.io/sig-storage/csi-resizer:v2.0.0
           args:
             - "--v=5"
             - "--csi-address=$(ADDRESS)"
@@ -228,7 +228,7 @@ spec:
             capabilities:
               add: ["SYS_ADMIN"]
             allowPrivilegeEscalation: true
-          image: moosefs/moosefs-csi:0.9.8-4.58.1
+          image: moosefs/moosefs-csi:1.0.0-4.58.3
           args:
             - "--mode=controller"
             - "--csi-endpoint=$(CSI_ENDPOINT)"
@@ -327,7 +327,7 @@ spec:
             capabilities:
               add: ["SYS_ADMIN"]
             allowPrivilegeEscalation: true
-          image: moosefs/moosefs-csi:0.9.8-4.58.1
+          image: moosefs/moosefs-csi:1.0.0-4.58.3
           args:
             - "--mode=node"
             - "--csi-endpoint=$(CSI_ENDPOINT)"
