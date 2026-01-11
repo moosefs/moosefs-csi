@@ -12,6 +12,13 @@ MooseFS source code can be found [on GitHub](https://github.com/moosefs/moosefs)
 
 ## Changelog
 
+Driver verson 1.0.0
+* Update MooseFS client to version 4.58.3.
+* Update Image to Alpine Linux 3.23.
+* Update the GO libraries to fix vulnerabilities.
+* Allow support for fsGroup.
+* Update csi-node-driver-registrar url.
+
 Driver verson 0.9.8
 * MooseFS client updated to version 4.58.3.
 * Image OS changed to Alpine Linux 3.22
@@ -64,15 +71,16 @@ Driver verson 0.9.7
     * Locate image definition under the `csi-moosefs-plugin` plugin name(line 230 and line 329)
       `mage: ghcr.io/moosefs/moosefs-csi:dev`
     * Update the `image` version suffix in the plugin's section accordingly:
-        * `0.9.8-4.58.3`       – plugin version 0.9.8 and MooseFS CE 4.58.3
-        * `0.9.8-4.57.7`       – plugin version 0.9.8 and MooseFS CE 4.57.6
-        * `0.9.7-4.57.6`       – plugin version 0.9.7 and MooseFS CE 4.57.5
+        * `1.0.0-4.58.3`       – plugin version 1.0.0 and MooseFS CE 4.58.3
+        * `0.9.8-4.58.0`       – plugin version 0.9.8 and MooseFS CE 4.58.0
+        * `0.9.8-4.57.7`       – plugin version 0.9.8 and MooseFS CE 4.57.7
+        * `0.9.7-4.57.6`       – plugin version 0.9.7 and MooseFS CE 4.57.6
 
       You can find a complete list of available images at: \
       https://github.com/moosefs/moosefs-csi/pkgs/container/moosefs-csi
 
-      Fot driver with MoosreFS client PRO version: https://registry.moosefs.com/v2/moosefs-csi-plugin/tags/list.
-        * `0.9.8-4.58.3-pro`   – plugin version 0.9.8 and MooseFS PRO 4.58.3
+      Fot driver with MooseFS client PRO version: https://registry.moosefs.com/v2/moosefs-csi-plugin/tags/list.
+        * `1.0.0-4.58.3-pro`   – plugin version 1.0.0 and MooseFS PRO 4.58.3
 
 
       **Note there are two occurrences of `csi-moosefs-plugin` in `csi-moosefs.yaml` file and it is necessary to update the image version in both places of the file.**
@@ -258,12 +266,12 @@ spec:
 | Kubernetes | MooseFS CSI Driver |
 |:----------:|:------------------:|
 |  `v1.26`   |      `v0.9.7`      |
-|  `-----`   |      `------`      |
 |  `v1.32`   |      `v0.9.8`      |
+|  `v1.33`   |      `v1.0.0`      |
 
 ## Copyright
 
-Copyright (c) 2020-2025 Saglabs SA
+Copyright (c) 2020-2026 Saglabs SA
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at [http://www.apache.org/licenses/LICENSE-2.0](https://www.apache.org/licenses/LICENSE-2.0).
 

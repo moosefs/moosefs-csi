@@ -8,7 +8,7 @@ on:
 env:
   REGISTRY_IMAGE: moosefs/moosefs-csi
   MFS_CLIENT: 4.58.3
-  CSI_VERSION: 0.9.8
+  CSI_VERSION: 1.0.0
 
 jobs:
   build-dockerhub:
@@ -58,4 +58,3 @@ jobs:
           tags: |
             ghcr.io/${{ env.REGISTRY_IMAGE }}:${{ env.CSI_VERSION }}-${{ env.MFS_CLIENT }}
             ghcr.io/${{ env.REGISTRY_IMAGE }}:latest
-      

@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Saglabs SA. All Rights Reserved.
+# Copyright (c) 2026 Saglabs SA. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
 # limitations under the License.
 
 MFS_VERSION = "4.58.3"
-CSI_VERSION ?= "0.9.8"
+CSI_VERSION ?= "1.0.0"
 
 MFS_TAG=$(CSI_VERSION)-$(MFS_VERSION)
 DEV_TAG=$(CSI_VERSION)-dev
@@ -26,11 +26,11 @@ prod: build-prod push-prod
 
 compile:
 	@echo "==> Building the CSI driver"
-	@env CGO_ENABLED=0 GOCACHE=/tmp/go-cache GOOS=linux GOARCH=amd64 go build -a -o cmd/moosefs-csi-plugin/${NAME} cmd/moosefs-csi-plugin/main.go
+	@env CGO_ENABLED=0 GOCACHE=/tmp/go-cache GOOS=linux GOARCH=amd64 go build -a -o cmd/moosefs-csi-plugin/${NAME}-plugin cmd/moosefs-csi-plugin/main.go
 
 build-dev:
-	@echo "==> Building DEV CSI images"
-	@docker build --no-cache -t moosefs/$(NAME):dev -t moosefs/$(NAME):$(DEV_TAG) --build-arg MFS_TAG=v$(MFS_VERSION) --build-arg CSI_TAG=dev --file cmd/moosefs-csi-plugin/dev.Dockerfile .
+	@echo "==> Building DEV CSI image"
+	@docker build --no-cache -t moosefs/$(NAME):dev -t moosefs/$(NAME):$(DEV_TAG) --build-arg MFS_TAG=v$(MFS_VERSION) --file cmd/moosefs-csi-plugin/dev.Dockerfile .
 
 push-dev:
 	@echo "==> Publishing DEV CSI image on hub.docker.com: moosefs/$(NAME):$(DEV_TAG)"
@@ -47,7 +47,7 @@ push-prod:
 
 dev-buildx:
 	@echo "==> Using buildx to build and publish dev image"
-	@docker buildx build --no-cache --push --platform linux/amd64,linux/arm64,linux/arm/v7 --build-arg MFS_TAG=v$(MFS_VERSION) --build-arg CSI_TAG=dev -t moosefs/$(NAME):dev -t moosefs/$(NAME):$(DEV_TAG) --file cmd/moosefs-csi-plugin/dev.Dockerfile .
+	@docker buildx build --no-cache --push --platform linux/amd64,linux/arm64 --build-arg MFS_TAG=v$(MFS_VERSION) -t moosefs/$(NAME):dev -t moosefs/$(NAME):$(DEV_TAG) --file cmd/moosefs-csi-plugin/dev.Dockerfile .
 
 prod-buildx:
 	@echo "==> Using buildx to build and publish production image"
