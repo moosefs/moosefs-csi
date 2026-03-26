@@ -19,6 +19,7 @@ package driver
 import (
 	"context"
 	"fmt"
+	"io/fs"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc/codes"
@@ -97,7 +98,16 @@ func (cs *ControllerService) CreateVolume(ctx context.Context, req *csi.CreateVo
 		return nil, status.Error(codes.InvalidArgument, "CreateVolume: VolumeContentSource not supported")
 	}
 
-	volumeId := req.Name
+	volumePrefix, ok := req.Parameters["volumePrefix"]
+	if !ok {
+		volumePrefix = ""
+	}
+
+	volumeId := fmt.Sprintf("%s%s", volumePrefix, req.Name)
+	if !fs.ValidPath(volumeId) {
+		return nil, status.Error(codes.InvalidArgument, "CreateVolume: combined volumeId with volumePrefix is not a valid path")
+	}
+
 	exists, err := cs.ctlMount.VolumeExist(volumeId)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
@@ -121,9 +131,6 @@ func (cs *ControllerService) CreateVolume(ctx context.Context, req *csi.CreateVo
 			log.Warningf("CreateVolume - requested %d bytes, got %d", requestedQuota, acquiredSize)
 		}
 	}
-	if len(req.Parameters) != 0 {
-		return nil, status.Errorf(codes.Internal, "CreateVolume: Plugin parameters are not supported")
-	}
 	/*
 		volumeContext := req.GetParameters()
 		if volumeContext == nil {
@@ -144,7 +151,7 @@ func (cs *ControllerService) CreateVolume(ctx context.Context, req *csi.CreateVo
 	*/
 	resp := &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
-			VolumeId:      req.GetName(),
+			VolumeId:      volumeId,
 			CapacityBytes: acquiredSize,
 		},
 	}
