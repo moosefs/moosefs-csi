@@ -12,6 +12,12 @@ MooseFS source code can be found [on GitHub](https://github.com/moosefs/moosefs)
 
 ## Changelog
 
+Driver verson 1.1.0
+* Update gRCP to version 1.79.3.
+* Fix RBAC for csi-resizer (nvtkaszpir)
+* Add volume prefix for multi-storage-class provisioning (chaserhkj)
+* Update Image to Alpine Linux 3.24.
+
 Driver verson 1.0.0
 * Update MooseFS client to version 4.59.2.
 * Update Image to Alpine Linux 3.23.
@@ -68,19 +74,21 @@ Driver verson 0.9.7
 
     The default image consists of the latest version of the CSI plug-in and the latest version of the MooseFS Community Edition client:
 
-    * Locate image definition under the `csi-moosefs-plugin` plugin name(line 230 and line 329)
-      `mage: ghcr.io/moosefs/moosefs-csi:dev`
+    * Locate image definition under the `csi-moosefs-plugin` plugin name (line 237 and line 337)
+      `image: moosefs/moosefs-csi:latest`
     * Update the `image` version suffix in the plugin's section accordingly:
+        * `1.1.0-4.59.2`       – plugin version 1.1.0 and MooseFS CE 4.59.2
         * `1.0.0-4.59.2`       – plugin version 1.0.0 and MooseFS CE 4.59.2
         * `0.9.8-4.58.0`       – plugin version 0.9.8 and MooseFS CE 4.58.0
         * `0.9.8-4.57.7`       – plugin version 0.9.8 and MooseFS CE 4.57.7
-        * `0.9.7-4.57.6`       – plugin version 0.9.7 and MooseFS CE 4.57.6
 
       You can find a complete list of available images at: \
-      https://github.com/moosefs/moosefs-csi/pkgs/container/moosefs-csi
+      https://hub.docker.com/r/moosefs/moosefs-csi/tags
 
-      Fot driver with MooseFS client PRO version: https://registry.moosefs.com/v2/moosefs-csi-plugin/tags/list.
-        * `1.0.0-4.59.2-pro`   – plugin version 1.0.0 and MooseFS PRO 4.59.2
+      Fot driver with MooseFS client PRO version: 
+        * `moosefs/moosefs-csi:latest-pro`         – latest plugin version and MooseFS PRO client
+        * `moosefs/moosefs-csi:1.1.0-4.59.2-pro`   – plugin version 1.1.0 and MooseFS PRO 4.59.2
+        * `moosefs/moosefs-csi:1.0.0-4.59.2-pro`   – plugin version 1.0.0 and MooseFS PRO 4.59.2
 
 
       **Note there are two occurrences of `csi-moosefs-plugin` in `csi-moosefs.yaml` file and it is necessary to update the image version in both places of the file.**
@@ -146,6 +154,27 @@ Driver verson 0.9.7
     ```
 
 ## More examples and capabilities
+
+### Multi storage class provisioning
+
+MooseFS CSI Driver starting from version 1.1.0 allows users to provision different Kubernetes storage class volumes to different path prefixes within MooseFS. By configuring distinct `volumePrefix` values for different StorageClass objects, then users can use the MooseFS tool `mfssclass set` on subdirectories to map specific k8s storage classes directly to specyfic MooseFS storage classes, enabling fine-grained storage tiering and management.
+
+For example:
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: moosefs-3cp
+provisioner: csi.moosefs.com
+parameters:
+  volumePrefix: "3CP/"
+```
+
+Than set correspondingly in moosefs:
+```bash
+$ mfssclass set 3CP /pv_data/volumes/3CP
+```
 
 ### Volume Expansion
 

@@ -13,7 +13,7 @@
 # limitations under the License.
 
 MFS_VERSION = "4.59.2"
-CSI_VERSION ?= "1.0.0"
+CSI_VERSION ?= "1.1.0"
 
 MFS_TAG=$(CSI_VERSION)-$(MFS_VERSION)
 DEV_TAG=$(CSI_VERSION)-dev

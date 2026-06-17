@@ -15,14 +15,14 @@
 ARG MFS_TAG="v4.59.2"
 
 #Build MooseFS CSI driver from source
-FROM golang:1.25-alpine3.23 AS csibuilder
+FROM golang:1.26-alpine3.24 AS csibuilder
 WORKDIR /build
 RUN apk add --update git
 COPY ./ /build
 RUN CGO_ENABLED=0 GOCACHE=/tmp/go-cache GOOS=linux go build -a -o /build/moosefs-csi-plugin cmd/moosefs-csi-plugin/main.go
 
 # MooseFS client is required for the CSI driver to mount volumes
-FROM moosefs/mfsbuilder:alpine3.23 AS mfsbuilder
+FROM moosefs/mfsbuilder:alpine3.24 AS mfsbuilder
 WORKDIR /moosefs
 ARG MFS_TAG
 RUN git clone --depth 1 --branch ${MFS_TAG} https://github.com/moosefs/moosefs.git /moosefs
@@ -31,7 +31,7 @@ RUN ./configure --prefix=/usr --mandir=/share/man --sysconfdir=/etc --localstate
 RUN cd /moosefs/mfsclient && make DESTDIR=/tmp/ install
 
 #Build CSI plugin container
-FROM alpine:3.23
+FROM alpine:3.24
 RUN apk add --update fuse3-libs findmnt
 COPY --from=csibuilder /build/moosefs-csi-plugin /bin/moosefs-csi-plugin
 COPY --from=mfsbuilder /tmp/usr/bin /usr/bin
