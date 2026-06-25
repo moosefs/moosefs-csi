@@ -13,7 +13,7 @@ MooseFS source code can be found [on GitHub](https://github.com/moosefs/moosefs)
 ## Changelog
 
 Driver verson 1.1.0
-* Update gRCP to version 1.79.3.
+* Update gRPC to version 1.79.3.
 * Fix RBAC for csi-resizer (nvtkaszpir)
 * Add volume prefix for multi-storage-class provisioning (chaserhkj)
 * Update Image to Alpine Linux 3.24.
