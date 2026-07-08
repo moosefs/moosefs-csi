@@ -1,0 +1,25 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: mfs-restart-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mfs-restart-test
+  template:
+    metadata:
+      labels:
+        app: mfs-restart-test
+    spec:
+      containers:
+        - name: app
+          image: busybox
+          volumeMounts:
+            - mountPath: "/data"
+              name: moosefs-volume
+          command: ["sleep", "1000000"]
+      volumes:
+        - name: moosefs-volume
+          persistentVolumeClaim:
+            claimName: my-moosefs-pvc

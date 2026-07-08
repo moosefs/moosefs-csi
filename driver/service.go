@@ -22,8 +22,10 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"os/signal"
 	"path"
 	"path/filepath"
+	"syscall"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/sirupsen/logrus"
@@ -38,18 +40,47 @@ const (
 
 type Service interface{}
 
+// Stopper is implemented by services that own resources which must be
+// released on graceful shutdown. Currently only *NodeService implements
+// it, to unmount the shared per-node pool mount(s) on SIGTERM/SIGINT so
+// that open MooseFS master sessions are closed cleanly. Per-volume
+// staging mounts are intentionally NOT touched here: they are created
+// in the host namespace (see MountMfsVolumeStaged / HostNamespaceMount)
+// precisely so they outlive the csi-moosefs-node container and keep
+// serving application pods across plugin restarts.
+type Stopper interface {
+	Stop()
+}
+
 var SanityTestRun bool
 var MfsLog bool
 var log logrus.Logger
 
-func Init(sanityTestRun bool, logLevel int, mfsLog bool) error {
+// HostNamespaceMount controls whether per-volume staging mounts are executed
+// in the host's mount/PID namespaces (via nsenter) rather than the
+// csi-moosefs-node container's own namespace. This decouples the mfsmount
+// FUSE daemon lifetime from the plugin container's lifetime, fixing mounts
+// becoming unusable ("mount through procfd", ENOTCONN) whenever the plugin
+// container restarts. Requires hostPID: true on the node DaemonSet.
+// See: https://github.com/moosefs/moosefs-csi/issues/32
+var HostNamespaceMount bool
+
+func Init(sanityTestRun bool, logLevel int, mfsLog bool, hostNamespaceMount bool) error {
 	log = *logrus.New()
 	SanityTestRun = sanityTestRun
 	log.SetLevel(logrus.Level(logLevel))
 	MfsLog = mfsLog
+	HostNamespaceMount = hostNamespaceMount
 	return nil
 }
 
+// StartService starts the gRPC server and blocks until the server stops.
+// On SIGTERM/SIGINT it performs a graceful gRPC shutdown
+// (GracefulStop) and, when the underlying service implements Stopper,
+// runs service-level cleanup (e.g. unmounting the node-plugin pool
+// mount) before returning. This avoids leaving dangling master sessions
+// when kubelet evicts the csi-moosefs-node pod. Per-volume staging
+// mounts are never torn down here (see Stopper docs).
 func StartService(service *Service, mode, csiEndpoint string) error {
 	log.Infof("StartService - endpoint %s", csiEndpoint)
 	gRPCServer := CreategRPCServer()
@@ -70,13 +101,44 @@ func StartService(service *Service, mode, csiEndpoint string) error {
 		return fmt.Errorf("StartService: Unrecognized service type: %T", service)
 	}
 
-	log.Info("StartService - Starting to serve!")
-	err = gRPCServer.Serve(listener)
-	if err != nil {
+	// Graceful shutdown: stop accepting new RPCs on SIGTERM/SIGINT,
+	// let in-flight RPCs drain, then run service cleanup.
+	if err := serveWithGracefulShutdown(gRPCServer, listener); err != nil {
 		return err
 	}
+
+	// Service-level cleanup (e.g. unmount pool mount on the node plugin).
+	if stopper, ok := (*service).(Stopper); ok {
+		log.Infof("StartService - running service cleanup (mode: %s)", mode)
+		stopper.Stop()
+	}
+
 	log.Info("StartService - gRPCServer stopped without an error!")
 	return nil
+}
+
+// serveWithGracefulShutdown runs srv.Serve(ln) and arranges for a
+// graceful shutdown (srv.GracefulStop) when the process receives
+// SIGTERM or SIGINT. It returns the error from Serve. Extracted from
+// StartService so the signal-handling contract is unit-testable with a
+// bare grpc.Server (no CSI service / MooseFS master required).
+func serveWithGracefulShutdown(srv *grpc.Server, ln net.Listener) error {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+	stopCh := make(chan struct{})
+	go func() {
+		select {
+		case sig := <-sigCh:
+			log.Infof("serveWithGracefulShutdown - received %s, gracefully stopping gRPC server", sig)
+			srv.GracefulStop()
+		case <-stopCh:
+		}
+	}()
+
+	log.Info("serveWithGracefulShutdown - starting to serve")
+	err := srv.Serve(ln)
+	close(stopCh)
+	return err
 }
 
 // CreateListener create listener ready for communication over given csi endpoint

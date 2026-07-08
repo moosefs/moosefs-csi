@@ -37,10 +37,11 @@ func main() {
 		sanityTestRun    = flag.Bool("sanity-test-run", false, "")
 		logLevel         = flag.Int("log-level", 5, "")
 		mfsLog           = flag.Bool("mfs-logging", true, "")
+		hostNamespaceMnt = flag.Bool("host-namespace-mount", true, "mount per-volume staging mounts in the host's mount/PID namespaces (via nsenter) so they survive csi-moosefs-node container restarts; requires hostPID: true on the node DaemonSet. See issue #32")
 	)
 	flag.Parse()
 
-	driver.Init(*sanityTestRun, *logLevel, *mfsLog)
+	driver.Init(*sanityTestRun, *logLevel, *mfsLog, *hostNamespaceMnt)
 
 	if *sanityTestRun {
 		log.Infof("=============== SANITY TEST ===============")

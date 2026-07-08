@@ -234,7 +234,7 @@ spec:
             capabilities:
               add: ["SYS_ADMIN"]
             allowPrivilegeEscalation: true
-          image: moosefs/moosefs-csi:latest
+          image: moosefs/moosefs-csi:dev
           #image: moosefs/moosefs-csi:latest-pro
           args:
             - "--mode=controller"
@@ -305,6 +305,13 @@ spec:
       priorityClassName: system-node-critical
       serviceAccount: csi-moosefs-node-sa
       hostNetwork: true
+      # Required so that per-volume staging mounts (see --host-namespace-mount)
+      # can be created in the host's PID/mount namespaces via
+      # "nsenter --target 1 --mount --pid". This decouples the mfsmount FUSE
+      # daemon's lifetime from this pod's lifetime, so published volumes
+      # survive csi-moosefs-node restarts/upgrades.
+      # See: https://github.com/moosefs/moosefs-csi/issues/32
+      hostPID: true
       containers:
         # registrar
         - name: driver-registrar
@@ -334,7 +341,7 @@ spec:
             capabilities:
               add: ["SYS_ADMIN"]
             allowPrivilegeEscalation: true
-          image: moosefs/moosefs-csi:latest
+          image: moosefs/moosefs-csi:dev
           #image: moosefs/moosefs-csi:latest-pro
           args:
             - "--mode=node"
@@ -347,6 +354,7 @@ spec:
             - "--mount-points-count=$(MOUNT_COUNT)"
             - "--mfs-logging=$(MFS_LOGGING)"
             - "--mfs-mount-options=$(MFS_MOUNT_OPTIONS)"
+            - "--host-namespace-mount=$(HOST_NAMESPACE_MOUNT)"
           env:
             - name: CSI_ENDPOINT
               value: unix:///csi/csi.sock
@@ -389,7 +397,29 @@ spec:
                 configMapKeyRef:
                   name: csi-moosefs-config
                   key: mfs_mount_options
+            - name: HOST_NAMESPACE_MOUNT
+              valueFrom:
+                configMapKeyRef:
+                  name: csi-moosefs-config
+                  key: host_namespace_mount
           imagePullPolicy: "Always"
+          # Liveness probe: stat the shared per-node pool mount. On a
+          # stale/hung FUSE mount the kernel returns ENOTCONN ("Transport
+          # endpoint is not connected") and stat exits non-zero, so kubelet
+          # restarts the container and the pool mount is re-established on
+          # the next startup. The pool mount path is /mnt/<NODE_ID> (see
+          # NewMfsHandler). initialDelaySeconds gives mfsmount time to
+          # connect to the master before probing.
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - stat /mnt/$(NODE_ID)
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
           volumeMounts:
             - name: plugin-dir
               mountPath: /csi

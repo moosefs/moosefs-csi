@@ -18,4 +18,10 @@ data:
   # Should driver log to k8s_root_dir/driver_working_dir/logs directory
   mfs_logging: "true"
   # Additional mfsmount options
-  mfs_mount_options: "mfsmd5pass=[MD5 hash]"
+  mfs_mount_options: "mfscachemode=DIRECT"
+  # Mount per-volume staging mounts in the host's mount/PID namespaces (via
+  # nsenter) instead of the csi-moosefs-node container's own namespace, so
+  # that published volumes survive csi-moosefs-node restarts/upgrades.
+  # Requires hostPID: true on the csi-moosefs-node DaemonSet (already set).
+  # See: https://github.com/moosefs/moosefs-csi/issues/32
+  host_namespace_mount: "true"

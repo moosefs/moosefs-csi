@@ -32,7 +32,12 @@ RUN cd /moosefs/mfsclient && make DESTDIR=/tmp/ install
 
 #Build CSI plugin container
 FROM alpine:3.24
-RUN apk add --update fuse3-libs findmnt
+# - util-linux provides nsenter, used to run per-volume staging mounts in
+#   the host's mount/PID namespaces so they survive csi-moosefs-node
+#   container restarts (see driver/mounter.go, HostNamespaceMount, issue #32).
+# - coreutils provides a stat(1) that reliably surfaces ENOTCONN on stale
+#   FUSE mounts, used by the container liveness probe (see deploy/).
+RUN apk add --update fuse3-libs findmnt util-linux coreutils
 COPY --from=csibuilder /build/moosefs-csi-plugin /bin/moosefs-csi-plugin
 COPY --from=mfsbuilder /tmp/usr/bin /usr/bin
 RUN ["ln", "-s", "/usr/bin/mfsmount", "/usr/sbin/mount.moosefs"]

@@ -1,0 +1,85 @@
+---
+# mfsmount-bootstrap.yaml
+#
+# One-shot bootstrap DaemonSet that installs the MooseFS client (mfsmount)
+# directly onto each node's host filesystem. This is required for
+# csi-moosefs-node to use host_namespace_mount=true, so per-volume staging
+# mounts (created in NodeStageVolume) survive csi-moosefs-node container
+# restarts / image upgrades (issue #32).
+#
+# What it does, per node:
+#   1. nsenters into the host's mount + PID namespaces (hostPID: true).
+#   2. Runs scripts/install-mfsmount.sh on the host: adds the official
+#      MooseFS repo and installs the OS-appropriate moosefs-client package.
+#   3. Sleeps forever (DaemonSet requires restartPolicy: Always). Re-runs
+#      are no-ops because the script is idempotent. Delete this DaemonSet
+#      when done.
+#
+# The install script is delivered via a ConfigMap. Create it from the
+# source-of-truth file (avoids fragile YAML block-scalar indentation of an
+# 80-line bash script):
+#
+#   kubectl create configmap mfsmount-bootstrap-script \
+#       --from-file=install-mfsmount.sh=scripts/install-mfsmount.sh \
+#       -n kube-system -o yaml --dry-run=client | kubectl apply -f -
+#   kubectl apply -f deploy/mfsmount-bootstrap.yaml
+#
+# Wait for completion:
+#   kubectl wait --for=condition=Ready pod -l app=mfsmount-bootstrap -n kube-system --timeout=300s
+#   kubectl logs -n kube-system -l app=mfsmount-bootstrap --tail=-1
+#
+# Clean up:
+#   kubectl delete -f deploy/mfsmount-bootstrap.yaml
+#   kubectl delete configmap mfsmount-bootstrap-script -n kube-system
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: mfsmount-bootstrap
+  namespace: kube-system
+  labels:
+    app: mfsmount-bootstrap
+spec:
+  selector:
+    matchLabels:
+      app: mfsmount-bootstrap
+  template:
+    metadata:
+      labels:
+        app: mfsmount-bootstrap
+    spec:
+      hostPID: true
+      hostNetwork: true
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: installer
+          image: alpine:3.24
+          securityContext:
+            privileged: true
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              # nsenter into the host's mount + PID namespaces (PID 1 = host
+              # init, reachable because hostPID: true) and run the install
+              # script there so packages are written to the host filesystem.
+              # The script is mounted into the *container* at /script, so feed
+              # it to the host bash via stdin (nsenter does not make the
+              # container's /script visible inside the host mount namespace).
+              nsenter --target 1 --mount --pid -- /bin/bash < /script/install-mfsmount.sh
+              # Keep the pod Running (DaemonSet requires restartPolicy: Always,
+              # so exiting would CrashLoop). Re-runs are no-ops because the
+              # script is idempotent. Delete this DaemonSet when done.
+              echo "[install-mfsmount] install complete; sleeping. Delete this DaemonSet to clean up."
+              sleep infinity
+          volumeMounts:
+            - name: script
+              mountPath: /script
+              readOnly: true
+      volumes:
+        - name: script
+          configMap:
+            name: mfsmount-bootstrap-script
+            defaultMode: 0755
+      restartPolicy: Always
