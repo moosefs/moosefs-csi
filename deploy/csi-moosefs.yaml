@@ -187,6 +187,7 @@ spec:
       priorityClassName: system-cluster-critical
       serviceAccount: csi-moosefs-controller-sa
       hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
       containers:
         # provisioner
         - name: csi-provisioner
@@ -305,6 +306,7 @@ spec:
       priorityClassName: system-node-critical
       serviceAccount: csi-moosefs-node-sa
       hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
       containers:
         # registrar
         - name: driver-registrar
