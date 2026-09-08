@@ -15,7 +15,7 @@
 ARG MFS_TAG="v4.59.2"
 
 #Build MooseFS CSI driver from source
-FROM golang:1.26-alpine3.24 AS csibuilder
+FROM golang:1.27.1-alpine3.24 AS csibuilder
 WORKDIR /build
 RUN apk add --update git
 COPY ./ /build

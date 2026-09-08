@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG CSI_TAG="v1.1.0"
+ARG CSI_TAG="master"
 ARG MFS_TAG="v4.59.2"
 
 #Build MooseFS CSI driver from source
-FROM golang:1.26-alpine3.24 AS csibuilder
+FROM golang:1.27.1-alpine3.24 AS csibuilder
 WORKDIR /build
 ARG CSI_TAG
 RUN apk add --update git
