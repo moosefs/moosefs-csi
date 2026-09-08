@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-MFS_VERSION = "4.59.2"
-CSI_VERSION ?= "1.1.0"
+MFS_VERSION = 4.59.2
+MFS_PACKAGE_VERSION = $(MFS_VERSION)-1
+CSI_VERSION ?= 1.1.0
 
 MFS_TAG=$(CSI_VERSION)-$(MFS_VERSION)
 DEV_TAG=$(CSI_VERSION)-dev
@@ -30,7 +31,7 @@ compile:
 
 build-dev:
 	@echo "==> Building DEV CSI image"
-	@docker build --no-cache -t moosefs/$(NAME):dev -t moosefs/$(NAME):$(DEV_TAG) --build-arg MFS_TAG=v$(MFS_VERSION) --file cmd/moosefs-csi-plugin/dev.Dockerfile .
+	@docker build --no-cache -t moosefs/$(NAME):dev -t moosefs/$(NAME):$(DEV_TAG) --build-arg MFS_VERSION=$(MFS_PACKAGE_VERSION) --file cmd/moosefs-csi-plugin/dev.Dockerfile .
 
 push-dev:
 	@echo "==> Publishing DEV CSI image on hub.docker.com: moosefs/$(NAME):$(DEV_TAG)"
@@ -39,7 +40,7 @@ push-dev:
 
 build-prod:
 	@echo "==> Building Production CSI images"
-	@docker build --no-cache -t moosefs/$(NAME):$(MFS_TAG) --build-arg MFS_TAG=v$(MFS_VERSION) --build-arg CSI_TAG=$(CSI_VERSION) cmd/moosefs-csi-plugin
+	@docker build --no-cache -t moosefs/$(NAME):$(MFS_TAG) --build-arg MFS_VERSION=$(MFS_PACKAGE_VERSION) --file cmd/moosefs-csi-plugin/Dockerfile .
 
 push-prod:
 	@echo "==> Publishing PRODUCTION CSI image on hub.docker.com: moosefs/$(NAME):$(MFS_TAG)"
@@ -47,11 +48,11 @@ push-prod:
 
 dev-buildx:
 	@echo "==> Using buildx to build and publish dev image"
-	@docker buildx build --no-cache --push --platform linux/amd64,linux/arm64 --build-arg MFS_TAG=v$(MFS_VERSION) -t moosefs/$(NAME):dev -t moosefs/$(NAME):$(DEV_TAG) --file cmd/moosefs-csi-plugin/dev.Dockerfile .
+	@docker buildx build --no-cache --push --platform linux/amd64,linux/arm64 --build-arg MFS_VERSION=$(MFS_PACKAGE_VERSION) -t moosefs/$(NAME):dev -t moosefs/$(NAME):$(DEV_TAG) --file cmd/moosefs-csi-plugin/dev.Dockerfile .
 
 prod-buildx:
 	@echo "==> Using buildx to build and publish production image"
-	@docker buildx build --push --platform linux/amd64,linux/arm64,linux/arm/v7 --build-arg MFS_TAG=v$(MFS_VERSION) --build-arg CSI_TAG=dev -t moosefs/$(NAME):$(MFS_TAG) cmd/moosefs-csi-plugin
+	@docker buildx build --push --platform linux/amd64,linux/arm64,linux/arm/v7 --build-arg MFS_VERSION=$(MFS_PACKAGE_VERSION) -t moosefs/$(NAME):$(MFS_TAG) --file cmd/moosefs-csi-plugin/Dockerfile .
 
 clean:
 	@echo "==> Cleaning releases"
