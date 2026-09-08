@@ -107,9 +107,11 @@ func (m *Mounter) UMount(destPath string) error {
 
 	out, err := exec.Command(umountCmd, umountArgs...).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("Mounter::UMount -- mounting failed: %v cmd: '%s %s' output: %q",
+		return fmt.Errorf("Mounter::UMount -- unmounting failed: %v cmd: '%s %s' output: %q",
 			err, umountCmd, strings.Join(umountArgs, " "), string(out))
 	}
+	log.Infof("Mounter::UMount -- command completed successfully: '%s %s' output: %q",
+		umountCmd, strings.Join(umountArgs, " "), string(out))
 
 	return nil
 }

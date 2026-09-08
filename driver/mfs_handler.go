@@ -307,6 +307,11 @@ func (mnt *mfsHandler) BindUMount(target string) error {
 		if err := mounter.UMount(target); err != nil {
 			return err
 		}
+		if mounted, err := mounter.IsMounted(target); err != nil {
+			return fmt.Errorf("BindUMount - failed to verify target %s was unmounted: %w", target, err)
+		} else if mounted {
+			return fmt.Errorf("BindUMount - target %s is still mounted after umount completed successfully", target)
+		}
 	} else {
 		log.Infof("BindUMount - target %s was already unmounted", target)
 	}
